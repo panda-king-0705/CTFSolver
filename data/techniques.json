@@ -1,0 +1,177 @@
+[
+  {
+    "title": "ret2libc via puts GOT leak",
+    "category": "pwn",
+    "pattern": "64-bit dynamically linked ELF, NX enabled, no PIE (or a leak available), a stack buffer overflow but no win()/system() gadget in the binary itself. ASLR is on so libc base is unknown.",
+    "recipe": "Overflow the saved return address with a ROP chain that calls puts(puts@got) to leak a live libc address, then returns to main/start to re-trigger input. Subtract the known puts offset to compute libc base, resolve system and the '/bin/sh' string from the same libc, and send a second chain calling system('/bin/sh'). Use a pop rdi;ret gadget to set the argument; add a ret gadget to fix 16-byte stack alignment before system on modern libc.",
+    "tags": ["pwn", "rop", "ret2libc", "got-leak", "aslr-bypass", "pop-rdi", "stack-alignment"]
+  },
+  {
+    "title": "Format-string GOT overwrite",
+    "category": "pwn",
+    "pattern": "printf(user_input) with no format specifier; you can leak stack with %p and the binary has full RELRO disabled (writable GOT). Often a repeating loop so you get a second shot.",
+    "recipe": "Find your input's argument index on the stack with %N$p probing. Leak addresses to defeat ASLR, then use %n-style writes (%hn for 2-byte chunks) to overwrite a GOT entry (e.g. printf@got or exit@got) with the address of a win function or system. Use pwntools fmtstr_payload for the write-what-where arithmetic; split into short writes ordered by increasing value.",
+    "tags": ["pwn", "format-string", "got-overwrite", "write-what-where", "fmtstr", "percent-n", "relro"]
+  },
+  {
+    "title": "tcache poisoning to arbitrary write",
+    "category": "pwn",
+    "pattern": "glibc 2.26+ heap challenge (UAF or double free) with malloc/free menu, chunk sizes in the tcache range. Classic 'tcache dup' or use-after-free primitive available.",
+    "recipe": "Free a chunk twice (or edit a freed chunk) to corrupt the tcache fd pointer so it points at a target (e.g. __free_hook, __malloc_hook, or a GOT entry). Allocate twice: the second malloc returns the target address. Write system or a one_gadget there, then trigger (free a chunk whose data is '/bin/sh' for __free_hook). On glibc 2.32+ account for the safe-linking fd mangling (fd = ptr ^ (heap_addr>>12)).",
+    "tags": ["pwn", "heap", "tcache", "uaf", "double-free", "free-hook", "one-gadget", "safe-linking"]
+  },
+  {
+    "title": "Single-byte XOR brute force",
+    "category": "crypto",
+    "pattern": "A short ciphertext (hex or raw bytes) that looks like it was XORed against one repeating byte; entropy is low and you expect printable English/flag text underneath.",
+    "recipe": "Try all 256 key bytes, XOR the whole ciphertext with each, and score each candidate plaintext by English letter frequency (ETAOIN / printable ratio / space count). The highest-scoring key is almost always correct. Print the top few candidates and eyeball for the flag format. Trivial to script in pure Python.",
+    "tags": ["crypto", "xor", "single-byte-xor", "frequency-analysis", "brute-force", "classic"]
+  },
+  {
+    "title": "XOR over base64 decode-first",
+    "category": "crypto",
+    "pattern": "The challenge string is valid base64 but decodes to garbage, or the hint mentions base64 plus a key. Repeating-key or single-byte XOR is hidden one encoding layer down.",
+    "recipe": "Base64-decode first to recover the raw ciphertext bytes, THEN attack the XOR. If single-byte, brute 256 keys and score. If repeating-key (Vigenere-style XOR), find the key length with Hamming-distance/Kasiski analysis, split into columns by key position, and solve each column as an independent single-byte XOR. Reassemble and read the flag.",
+    "tags": ["crypto", "xor", "xor-over-base64", "base64", "repeating-key-xor", "hamming-distance", "key-length"]
+  },
+  {
+    "title": "RSA small-e cube root",
+    "category": "crypto",
+    "pattern": "RSA with a very small public exponent (e=3), and either a tiny message or no padding, such that m^e < n (the ciphertext did not wrap the modulus). Given n, e, c.",
+    "recipe": "If m^3 < n then c = m^3 exactly with no modular reduction, so m is simply the integer cube root of c. Compute the exact integer root (gmpy2.iroot or a binary-search nth-root) and convert to bytes. If m^e is slightly larger than n, try c + k*n for small k before taking the root (Hastad-style). Also applies to broadcast: same m to 3 recipients with e=3 solves via CRT then cube root.",
+    "tags": ["crypto", "rsa", "small-e", "cube-root", "hastad", "low-exponent", "no-padding"]
+  },
+  {
+    "title": "RSA common modulus attack",
+    "category": "crypto",
+    "pattern": "The same plaintext is encrypted under one shared modulus n with two different public exponents e1 and e2 that are coprime. You have n, e1, e2, c1, c2.",
+    "recipe": "Since gcd(e1,e2)=1, use the extended Euclidean algorithm to find a,b with a*e1 + b*e2 = 1. Then m = c1^a * c2^b mod n. Handle negative exponents with modular inverse (e.g. c1^(-|a|) = inverse(c1,n)^|a|). Decode the resulting integer to bytes for the flag.",
+    "tags": ["crypto", "rsa", "common-modulus", "extended-euclidean", "bezout", "coprime-exponents"]
+  },
+  {
+    "title": "RSA Wiener small-d attack",
+    "category": "crypto",
+    "pattern": "RSA where the public exponent e is suspiciously large (close to n) which hints the private exponent d is small (d < n^0.25). Given only n and e.",
+    "recipe": "Expand e/n as a continued fraction; each convergent k/d is a candidate. For each convergent, derive phi = (e*d - 1)/k and solve the quadratic x^2 - (n - phi + 1)x + n = 0 for the primes; if the roots are integers you recovered p and q. Use an existing Wiener implementation (owiener) or RsaCtfTool to automate. Then decrypt normally.",
+    "tags": ["crypto", "rsa", "wiener", "small-d", "continued-fractions", "convergents", "rsactftool"]
+  },
+  {
+    "title": "AES-ECB cut-and-paste",
+    "category": "crypto",
+    "pattern": "An oracle encrypts attacker-controlled data with AES in ECB mode (identical plaintext blocks produce identical ciphertext blocks) and you control part of the input, e.g. a username in a token like role=user.",
+    "recipe": "Confirm ECB by sending two identical 16-byte blocks and seeing repeated ciphertext. Align your controlled input so a block boundary falls right where you want to swap (e.g. craft an input whose block encrypts 'admin' + PKCS7 padding). Capture the ciphertext block for the value you want, then re-order/splice ciphertext blocks to forge a token (role=admin). Also use byte-at-a-time ECB decryption when a secret suffix is appended.",
+    "tags": ["crypto", "aes", "ecb", "cut-and-paste", "block-cipher", "byte-at-a-time", "padding"]
+  },
+  {
+    "title": "Nonce reuse recovery",
+    "category": "crypto",
+    "pattern": "A stream cipher or CTR/GCM mode where the same nonce/keystream is reused across two messages, or an ECDSA signer reusing the k nonce across two signatures.",
+    "recipe": "For stream/CTR reuse: c1 XOR c2 = m1 XOR m2, so crib-drag known plaintext (flag prefix, common words) against the XOR to peel out both messages. For AES-GCM nonce reuse, recover the authentication key H and forge tags (forbidden-attack). For ECDSA reused k: with two signatures (r,s1),(r,s2) on known hashes, k = (z1 - z2)/(s1 - s2) mod n, then d = (s1*k - z1)/r mod n recovers the private key.",
+    "tags": ["crypto", "nonce-reuse", "stream-cipher", "crib-drag", "ctr-mode", "ecdsa", "gcm-forbidden-attack"]
+  },
+  {
+    "title": "SQL injection UNION-based extraction",
+    "category": "web",
+    "pattern": "A parameter reflected into a SQL query; a single quote breaks the page or changes results, and the response renders a row/table you can influence. ORDER BY / error messages reveal column count.",
+    "recipe": "Find the column count with ORDER BY n until it errors, then find which columns are reflected using UNION SELECT 1,2,3. Place output in reflected columns: UNION SELECT NULL,table_name,NULL FROM information_schema.tables to enumerate schema, then dump target columns and rows (users/flags). Use group_concat to pull many rows at once. If no output is reflected, pivot to boolean/time-based blind injection (sleep/substring). Match quoting and comment style (-- -, #) to the DB.",
+    "tags": ["web", "sqli", "union-based", "information-schema", "blind-sqli", "group-concat", "database"]
+  },
+  {
+    "title": "SSTI in Jinja2 to RCE",
+    "category": "web",
+    "pattern": "User input reflected and evaluated as a template; the probe {{7*7}} renders as 49. Flask/Jinja2 stack, or {{7*'7'}} returns '7777777' confirming Jinja specifically.",
+    "recipe": "Confirm the engine with arithmetic and string probes. Climb the Python object chain from an exposed object: {{''.__class__.__mro__[1].__subclasses__()}} to find a class exposing os/subprocess (e.g. subprocess.Popen or a warnings-based loader). Invoke it to run commands: read the flag file or get a reverse shell. Modern shortcut: {{ cycler.__init__.__globals__.os.popen('cat /flag').read() }} or use lipsum/get_flashed_messages globals. If a WAF blocks dots/brackets, use attribute access via |attr() and string concatenation.",
+    "tags": ["web", "ssti", "jinja2", "rce", "python", "mro", "subclasses", "waf-bypass"]
+  },
+  {
+    "title": "IDOR object enumeration",
+    "category": "web",
+    "pattern": "An endpoint references an object by a predictable identifier (/api/user/1003, ?order_id=42, a sequential or guessable UUID) and authorization is not checked server-side for that object.",
+    "recipe": "Capture a legitimate request in a proxy, then tamper the object identifier to reference another user's resource. Increment/decrement numeric IDs, swap UUIDs, or change the owner field in the body. Script enumeration across the ID range to harvest other users' data (and the admin/flag record). Try horizontal (other users) and vertical (higher-privilege objects) escalation, and switch HTTP methods (GET vs POST/PUT) which may skip the auth check.",
+    "tags": ["web", "idor", "broken-access-control", "enumeration", "authorization", "bola"]
+  },
+  {
+    "title": "SSRF to cloud metadata",
+    "category": "web",
+    "pattern": "A server-side feature fetches a user-supplied URL (webhook, image/url preview, PDF renderer, import-from-URL) and returns or acts on the response. The app runs in a cloud environment (AWS/GCP/Azure).",
+    "recipe": "Point the URL at internal resources the server can reach: 169.254.169.254 for the cloud metadata service to steal IAM credentials (AWS: /latest/meta-data/iam/security-credentials/), or internal admin ports/localhost services. Bypass naive filters with alternate IP encodings (decimal/octal/IPv6, 0x7f.0.0.1), DNS rebinding, redirects (your server 302s to the internal target), and gopher:// for raw TCP to reach non-HTTP services. Exfil the flag or pivot with the stolen creds.",
+    "tags": ["web", "ssrf", "cloud-metadata", "169.254.169.254", "iam-credentials", "filter-bypass", "gopher"]
+  },
+  {
+    "title": "Insecure deserialization RCE",
+    "category": "web",
+    "pattern": "The app accepts serialized objects from the client: PHP cookies/params with O:/a: syntax, Python pickle, Java with rO0 (base64 'ac ed 00 05') or Ruby/Node payloads. A magic method runs on unserialize.",
+    "recipe": "Identify the format from the blob's signature. For PHP, craft an object of a class with a useful __wakeup/__destruct (POP chain / phar deserialization) to reach file write or system(). For Python pickle, build an object whose __reduce__ returns (os.system,('cmd',)). For Java, use ysoserial to generate a gadget-chain payload (CommonsCollections, etc.) for the target library. Deliver the payload where the app deserializes it and run commands to read the flag.",
+    "tags": ["web", "deserialization", "rce", "pickle", "php-object-injection", "ysoserial", "pop-chain", "phar"]
+  },
+  {
+    "title": "Ghidra + angr symbolic solve",
+    "category": "rev",
+    "pattern": "A crackme that reads input and prints Correct/Wrong after a chain of arithmetic/constraint checks. No crypto, just a check function; brute force is infeasible but the logic is self-contained.",
+    "recipe": "Load the binary in Ghidra to locate the check/validation function and the success address (and any avoid/failure address). Script angr: create a project, set a symbolic bitvector for the input (stdin or buffer), start a simulation manager, explore(find=success_addr, avoid=fail_addr). When a state reaches success, solver.eval the symbolic input to concrete bytes. Add constraints (printable, length) to speed convergence; hook or skip expensive library calls.",
+    "tags": ["rev", "ghidra", "angr", "symbolic-execution", "crackme", "constraint-solving", "z3"]
+  },
+  {
+    "title": "UPX / packer unpack",
+    "category": "rev",
+    "pattern": "strings shows a 'UPX!' marker or three UPX section names, the binary has few imports and high-entropy sections, and the entry point jumps into a small stub that unpacks the real code.",
+    "recipe": "First try the trivial path: 'upx -d packed_bin -o unpacked'. If the header was tampered to defeat upx -d, repair the magic/section names or unpack manually: run under a debugger, set the OEP by running the stub to its final tail jump (popad; jmp), then dump the process memory and rebuild the import table (Scylla / x64dbg dump). For custom packers, break on the write-then-execute of the unpacked region. Then do normal static/dynamic rev on the recovered code.",
+    "tags": ["rev", "upx", "packer", "unpack", "entropy", "oep", "import-table", "memory-dump"]
+  },
+  {
+    "title": "Anti-debug bypass",
+    "category": "rev",
+    "pattern": "The binary behaves differently under a debugger: it exits early, prints a decoy, or the control flow diverges. You spot ptrace(PTRACE_TRACEME), /proc/self/status TracerPid checks, timing (rdtsc) checks, or int3 scanning.",
+    "recipe": "Enumerate the checks statically in Ghidra/IDA. Neutralize them: patch the ptrace call to return 0 (or LD_PRELOAD a fake ptrace), force the TracerPid/IsDebuggerPresent comparison to take the clean branch by NOPing the jump or flipping the condition, and defeat timing checks by patching rdtsc deltas. In GDB, set a breakpoint after the check and overwrite the register/flag before the branch. Once clean, continue normal dynamic analysis to reach the flag logic.",
+    "tags": ["rev", "anti-debug", "ptrace", "tracerpid", "isdebuggerpresent", "patch", "gdb", "rdtsc"]
+  },
+  {
+    "title": "pcap follow TCP stream",
+    "category": "forensics",
+    "pattern": "A .pcap/.pcapng capture is provided and the flag is expected to be transmitted in cleartext over some protocol (HTTP, FTP, telnet, IRC, a custom TCP service) rather than encrypted.",
+    "recipe": "Open in Wireshark; use Statistics > Protocol Hierarchy and Conversations to see what is in the capture. Follow TCP/HTTP streams to read full request/response bodies. Use File > Export Objects > HTTP to pull transferred files. Search packet bytes for the flag format (Edit > Find Packet, string). For credentials/commands, follow telnet/FTP streams. Scriptable with tshark/scapy for large captures; reassemble transferred files and run strings/file on them.",
+    "tags": ["forensics", "pcap", "wireshark", "tshark", "follow-stream", "http-export", "network", "scapy"]
+  },
+  {
+    "title": "volatility3 memory triage",
+    "category": "forensics",
+    "pattern": "A raw memory image / RAM dump (.raw, .mem, .vmem, .lime) is provided and you need to find a secret in a running process, a typed command, a cached file, or an injected payload.",
+    "recipe": "Run volatility3 to triage: windows.pslist and pstree to see processes, windows.cmdline for launch arguments, windows.pstree for parent/child anomalies. Dump a suspicious process with windows.memmap/windows.dumpfiles and run strings/grep for the flag. Use windows.filescan + dumpfiles to carve files from memory, windows.hashdump for creds, and windows.netscan for connections. For 'what did they type', check console/consoles and clipboard plugins. On Linux images use the linux.* plugins (linux.pslist, linux.bash for shell history).",
+    "tags": ["forensics", "volatility3", "memory-forensics", "pslist", "dumpfiles", "filescan", "bash-history", "ram-dump"]
+  },
+  {
+    "title": "binwalk carve embedded files",
+    "category": "forensics",
+    "pattern": "A file (often an image or firmware blob) is larger than it should be, or 'file' misidentifies it; you suspect appended/embedded data, a hidden archive, or a firmware filesystem concatenated after the real content.",
+    "recipe": "Run 'binwalk file' to list embedded signatures (ZIP, gzip, PNG, filesystems at offsets). Extract with 'binwalk -e' (or --dd) to carve out each embedded object; for firmware use binwalk's filesystem extraction (squashfs/cpio). If binwalk misses it, inspect with xxd/hexdump for trailing magic bytes (e.g. a ZIP 'PK' after PNG IEND) and carve manually with dd at the offset. Then recurse analysis on the carved files and read the flag.",
+    "tags": ["forensics", "binwalk", "carving", "embedded-files", "firmware", "appended-data", "dd", "hexdump"]
+  },
+  {
+    "title": "LSB steganography and zsteg",
+    "category": "forensics",
+    "pattern": "An innocuous-looking PNG/BMP (lossless) image where the flag is suspected to be hidden in least-significant-bit planes, color channels, or alpha. JPEGs instead suggest steghide/jsteg.",
+    "recipe": "For PNG/BMP: run zsteg (zsteg -a) to auto-scan LSB across bit orders and channels; it often prints the flag directly. Cross-check with stegsolve to flip through bit planes and channel views visually. Manually, extract the LSB of each pixel with PIL and assemble bytes. For JPEG, try steghide extract (guess/crack the passphrase, often empty or from the challenge text), jsteg, or outguess. Also check metadata (exiftool) and appended data (binwalk) first as quick wins.",
+    "tags": ["forensics", "steganography", "lsb", "zsteg", "stegsolve", "png", "steghide", "exiftool"]
+  },
+  {
+    "title": "Encoding ladder decode",
+    "category": "misc",
+    "pattern": "A long opaque string that is clearly machine-encoded, not ciphertext: it matches base64/base32/hex/base85 charset, or looks like ROT13, Morse, binary, or decimal ASCII. Often several layers stacked.",
+    "recipe": "Identify the layer by charset/structure: =-padding and A-Za-z0-9+/ is base64; A-Z2-7 is base32; only 0-9a-f is hex; dots/dashes are Morse; 0/1 groups of 8 are binary. Decode one layer, inspect, and repeat (base64 of hex of ...). Automate with CyberChef's 'Magic' operation or a script that tries decoders and detects printable/flag output. Watch for reversed strings, ROT-N, and ASCII-decimal. Stop when the flag format appears.",
+    "tags": ["misc", "encoding", "base64", "base32", "cyberchef", "rot13", "morse", "decode-ladder"]
+  },
+  {
+    "title": "Esolang execution",
+    "category": "misc",
+    "pattern": "The challenge source is not a normal language: a wall of +-<>[]., (Brainfuck), whitespace-only files, 'Ook.' tokens, Malbolge, or Piet images. The flag is produced by running it.",
+    "recipe": "Fingerprint the esolang by its token set (+-<>[]. = Brainfuck; only spaces/tabs/newlines = Whitespace; 'Ook. Ook?' = Ook). Run it through an interpreter (online or a small local one) to get the output, which is usually the flag. If it reads input, feed candidate input or reverse the logic. For Brainfuck specifically, you can also statically trace the +/- loops to reconstruct the emitted bytes without running it.",
+    "tags": ["misc", "esolang", "brainfuck", "whitespace", "ook", "piet", "interpreter"]
+  },
+  {
+    "title": "Git history / metadata leak",
+    "category": "misc",
+    "pattern": "The challenge gives a source directory or a web app where a .git/ folder is exposed, or there is a .DS_Store, .svn, backup files (index.php~, .bak), or environment files. The flag or a secret was committed then 'removed'.",
+    "recipe": "If a .git is present locally, run 'git log --all --oneline', inspect deleted/old versions with 'git show <commit>', 'git stash list', and 'git reflog' to recover content removed in later commits (the flag often lives in an earlier commit). For an exposed web .git, dump it with git-dumper then browse history offline. Also diff branches/tags. For .DS_Store use a parser to enumerate hidden filenames, and grab backup/swap files directly.",
+    "tags": ["misc", "git", "git-log", "reflog", "git-dumper", "source-leak", "ds-store", "backup-files"]
+  }
+]

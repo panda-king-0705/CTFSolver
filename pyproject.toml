@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ctfsolver"
+version = "0.1.0"
+description = "Autonomous CTF solver built on the BrainEngine design: orchestrate centrally, solve each challenge whole in a confined sandbox."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "AI CTF solver" }]
+
+# The CONTROL PLANE runs on the standard library alone (sqlite3 + FTS5, asyncio).
+# Everything below is optional and only needed once real LLM providers and real
+# exploitation tooling are plugged in. CI runs green without any of it.
+dependencies = []
+
+[project.optional-dependencies]
+providers = [
+  "anthropic>=0.39",
+  "openai>=1.50",
+]
+pwn = [
+  "pwntools>=4.12",
+]
+dev = [
+  "pytest>=8",
+]
+
+[project.scripts]
+ctfsolver = "ctfsolver.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

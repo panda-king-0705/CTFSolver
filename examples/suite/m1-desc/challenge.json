@@ -1,0 +1,12 @@
+{
+  "name": "m1-desc",
+  "flag_format": "flag\\{[^}]+\\}",
+  "description": "here: flag{read_the_description}",
+  "points": 25,
+  "submission": {
+    "kind": "regex",
+    "extra": {
+      "answer": "flag{read_the_description}"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "toy-xor",
+  "files": [
+    "cipher.b64"
+  ],
+  "flag_format": "flag\\{[^}]+\\}",
+  "points": 100,
+  "description": "A warm-up. The ciphertext is base64 of something simple.",
+  "submission": {
+    "kind": "regex",
+    "extra": {
+      "answer": "flag{x0r_4nd_base64_are_not_crypto}"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "c1-b64",
+  "flag_format": "flag\\{[^}]+\\}",
+  "files": [
+    "c.txt"
+  ],
+  "points": 50,
+  "submission": {
+    "kind": "regex",
+    "extra": {
+      "answer": "flag{base64_is_an_encoding}"
+    }
+  }
+}

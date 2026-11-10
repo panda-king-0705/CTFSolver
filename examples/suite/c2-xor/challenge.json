@@ -1,0 +1,14 @@
+{
+  "name": "c2-xor",
+  "flag_format": "flag\\{[^}]+\\}",
+  "files": [
+    "c.bin"
+  ],
+  "points": 75,
+  "submission": {
+    "kind": "regex",
+    "extra": {
+      "answer": "flag{xor_one_byte}"
+    }
+  }
+}

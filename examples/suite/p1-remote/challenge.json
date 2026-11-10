@@ -1,0 +1,11 @@
+{
+  "name": "p1-remote",
+  "flag_format": "flag\\{[^}]+\\}",
+  "files": [
+    "vuln"
+  ],
+  "targets": [
+    "nc pwn.ctf 1337"
+  ],
+  "points": 200
+}

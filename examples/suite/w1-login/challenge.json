@@ -1,0 +1,8 @@
+{
+  "name": "w1-login",
+  "flag_format": "flag\\{[^}]+\\}",
+  "targets": [
+    "https://web.ctf/login"
+  ],
+  "points": 150
+}

@@ -1,0 +1,192 @@
+{
+  "challenge": "admin-portal",
+  "challenge_id": "chal_a5e98e3d6bdc",
+  "summary": {
+    "status": "failed",
+    "flag": null,
+    "verified": false,
+    "specialist": "misc-specialist",
+    "spent_usd": 0.004,
+    "usd_left": 1.996,
+    "tool_calls": 2,
+    "calls_left": 58,
+    "time_left_s": 900.0
+  },
+  "events": [
+    {
+      "t": 0.0,
+      "block": "orchestrate",
+      "kind": "start",
+      "text": "admin-portal",
+      "data": {}
+    },
+    {
+      "t": 0.0,
+      "block": "audit:orchestrator",
+      "kind": "scope",
+      "text": "authorized",
+      "data": {
+        "scope": [
+          "https://web.authorized-ctf.example:443",
+          "web.authorized-ctf.example:443"
+        ]
+      }
+    },
+    {
+      "t": 0.0,
+      "block": "triage",
+      "kind": "start",
+      "text": "admin-portal",
+      "data": {}
+    },
+    {
+      "t": 0.001,
+      "block": "triage",
+      "kind": "note",
+      "text": "recalled: SSRF to cloud metadata; SSTI in Jinja2 to RCE; IDOR object enumeration",
+      "data": {}
+    },
+    {
+      "t": 0.001,
+      "block": "triage",
+      "kind": "note",
+      "text": "category=web subtype=- score=1.0",
+      "data": {}
+    },
+    {
+      "t": 0.001,
+      "block": "triage",
+      "kind": "end",
+      "text": "",
+      "data": {
+        "seconds": 0.001
+      }
+    },
+    {
+      "t": 0.001,
+      "block": "route",
+      "kind": "start",
+      "text": "",
+      "data": {}
+    },
+    {
+      "t": 0.001,
+      "block": "route",
+      "kind": "note",
+      "text": "category=web fit=0.89 -> web-specialist (whole-challenge hand-off)",
+      "data": {}
+    },
+    {
+      "t": 0.001,
+      "block": "route",
+      "kind": "end",
+      "text": "",
+      "data": {
+        "seconds": 0.0
+      }
+    },
+    {
+      "t": 0.001,
+      "block": "solve:web-specialist",
+      "kind": "start",
+      "text": "escalation=0",
+      "data": {}
+    },
+    {
+      "t": 0.001,
+      "block": "audit:sandbox",
+      "kind": "egress",
+      "text": "fetch web root",
+      "data": {
+        "host": null,
+        "port": null,
+        "url": "https://web.authorized-ctf.example/admin"
+      }
+    },
+    {
+      "t": 0.001,
+      "block": "solve:web-specialist",
+      "kind": "end",
+      "text": "",
+      "data": {
+        "seconds": 0.0
+      }
+    },
+    {
+      "t": 0.002,
+      "block": "escalate",
+      "kind": "note",
+      "text": "hint requested: enable the container sandbox",
+      "data": {}
+    },
+    {
+      "t": 0.002,
+      "block": "escalate",
+      "kind": "note",
+      "text": "second opinion -> misc-specialist",
+      "data": {}
+    },
+    {
+      "t": 0.003,
+      "block": "solve:misc-specialist",
+      "kind": "start",
+      "text": "escalation=1",
+      "data": {}
+    },
+    {
+      "t": 0.003,
+      "block": "solve:misc-specialist",
+      "kind": "end",
+      "text": "",
+      "data": {
+        "seconds": 0.0
+      }
+    },
+    {
+      "t": 0.003,
+      "block": "escalate",
+      "kind": "note",
+      "text": "human gate: denied",
+      "data": {}
+    },
+    {
+      "t": 0.003,
+      "block": "learn",
+      "kind": "start",
+      "text": "",
+      "data": {}
+    },
+    {
+      "t": 0.003,
+      "block": "learn",
+      "kind": "note",
+      "text": "episode logged (failed)",
+      "data": {}
+    },
+    {
+      "t": 0.003,
+      "block": "learn",
+      "kind": "note",
+      "text": "writeup generated",
+      "data": {}
+    },
+    {
+      "t": 0.003,
+      "block": "learn",
+      "kind": "end",
+      "text": "",
+      "data": {
+        "seconds": 0.0
+      }
+    },
+    {
+      "t": 0.003,
+      "block": "orchestrate",
+      "kind": "end",
+      "text": "",
+      "data": {
+        "seconds": 0.003
+      }
+    }
+  ]
+}

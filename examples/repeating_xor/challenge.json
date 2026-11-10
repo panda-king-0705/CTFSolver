@@ -1,0 +1,15 @@
+{
+  "name": "repeating-xor",
+  "files": [
+    "cipher.txt"
+  ],
+  "flag_format": "flag\\{[^}]+\\}",
+  "points": 150,
+  "description": "Multi-byte key. Single-byte brute won't cut it.",
+  "submission": {
+    "kind": "regex",
+    "extra": {
+      "answer": "flag{generated_solvers_run_in_the_sandbox}"
+    }
+  }
+}

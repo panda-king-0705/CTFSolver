@@ -1,0 +1,14 @@
+{
+  "name": "r1-strings",
+  "flag_format": "flag\\{[^}]+\\}",
+  "files": [
+    "bin"
+  ],
+  "points": 100,
+  "submission": {
+    "kind": "regex",
+    "extra": {
+      "answer": "flag{strings_finds_it}"
+    }
+  }
+}
