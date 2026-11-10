@@ -15,15 +15,28 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # --- system packages: shared + per-category CLI tools -------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
       # shared
-      build-essential git curl wget file xxd jq unzip p7zip-full ca-certificates \
+      build-essential git curl wget file xxd jq unzip xz-utils p7zip-full ca-certificates \
       netcat-openbsd socat ltrace \
       # pwn / rev
-      gdb binutils patchelf nasm radare2 upx-ucl \
+      gdb binutils patchelf nasm \
       # forensics
       tshark binwalk foremost exiftool steghide sleuthkit \
       # ruby (for one_gadget, zsteg)
       ruby ruby-dev \
   && rm -rf /var/lib/apt/lists/*
+
+# --- UPX (rev: unpack packed binaries) ---------------------------------------
+# Not in Debian bookworm, so install the official static release.
+RUN wget -q https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz -O /tmp/upx.tar.xz \
+ && tar xJf /tmp/upx.tar.xz -C /tmp \
+ && mv /tmp/upx-4.2.4-amd64_linux/upx /usr/local/bin/upx \
+ && rm -rf /tmp/upx*
+
+# --- radare2 (optional; dropped from Debian, so not apt-installable) ----------
+# Uncomment to add it from the project's own release (check the latest version/asset):
+#   RUN wget -q https://github.com/radareorg/radare2/releases/download/5.9.8/radare2_5.9.8_amd64.deb -O /tmp/r2.deb \
+#    && apt-get update && apt-get install -y /tmp/r2.deb \
+#    && rm -rf /tmp/r2.deb /var/lib/apt/lists/*
 
 # --- ruby gems: one_gadget (pwn), zsteg (stego) ------------------------------
 RUN gem install --no-document one_gadget zsteg
