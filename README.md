@@ -200,6 +200,13 @@ challenge. `crypto` and `misc` solve classic encoding/weak-cipher challenges ful
 offline today; the rest do what they can offline (strings/secret/magic-byte recon) and
 lay out a concrete plan that runs once the container sandbox is enabled.
 
+**It doesn't give up.** When a specialist has no canned path for a challenge, the orchestrator
+falls back to an **agentic reasoning loop** (`specialists/agent_loop.py`): the model drives a
+bounded think → act → observe loop with the real sandbox — propose one shell command or Python
+script, run it, read the output, adapt — until a flag appears or the budget runs out, with loop
+detection to break repetition. Everything runs in the sandbox (scope/egress/budget/audited); it
+needs a real model (`--subscription` or an API key) and no-ops cleanly on the offline stub.
+
 **Live instances** (`nc host port`, no handout): the pwn/misc paths talk to the socket
 directly — read the banner, probe, and, when the model is wired, write and run an interactive
 solver. A silent service is probed for **SMB** (`specialists/smb.py`, the `smb` extra): an

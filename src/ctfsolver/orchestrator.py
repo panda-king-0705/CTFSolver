@@ -21,13 +21,14 @@ from .guardrails.scope import ScopePolicy
 from .llm.base import LLMClient, Message, get_client
 from .llm.stub import StubClient
 from .memory.store import MemoryStore
-from .models import Budget, Category, Challenge, Outcome, OutcomeStatus, Attempt, Technique
+from .models import Budget, Category, Challenge, Flag, Outcome, OutcomeStatus, Attempt, Technique
 from .pipeline.route import route
 from .pipeline.triage import triage
 from .pipeline.verify import verify
 from .pipeline.writeup import generate_writeup
 from .sandbox.base import Sandbox
 from .sandbox.local import LocalSandbox
+from .specialists.agent_loop import agentic_solve
 from .specialists.base import SolveContext, Specialist
 from .specialists.registry import get as get_specialist
 from .specialists.registry import load_defaults
@@ -195,6 +196,18 @@ class Orchestrator:
             try:
                 with trace.span(f"solve:{current.name}", f"escalation={step}"):
                     outcome = await current.solve(ctx)
+                    # Don't give up when the specialist has no canned path: reason through it.
+                    # The agentic loop drives the model + sandbox (think -> act -> observe) until
+                    # a flag appears or the budget runs out. No-ops on the offline stub.
+                    if not outcome.solved:
+                        flag, asteps = await agentic_solve(ctx)
+                        outcome.steps = list(outcome.steps) + asteps
+                        if flag:
+                            outcome = Outcome(
+                                status=OutcomeStatus.SOLVED,
+                                flag=Flag(value=flag, source="agentic reasoning loop"),
+                                steps=outcome.steps, specialist=f"{current.name}+agent",
+                            )
             except BudgetExceeded as exc:
                 trace.note("solve", f"budget stop: {exc}")
                 outcome = Outcome(OutcomeStatus.FAILED, notes=f"budget: {exc}", specialist=current.name)
