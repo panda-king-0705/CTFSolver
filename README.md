@@ -200,12 +200,19 @@ challenge. `crypto` and `misc` solve classic encoding/weak-cipher challenges ful
 offline today; the rest do what they can offline (strings/secret/magic-byte recon) and
 lay out a concrete plan that runs once the container sandbox is enabled.
 
-**It doesn't give up.** When a specialist has no canned path for a challenge, the orchestrator
-falls back to an **agentic reasoning loop** (`specialists/agent_loop.py`): the model drives a
-bounded think → act → observe loop with the real sandbox — propose one shell command or Python
-script, run it, read the output, adapt — until a flag appears or the budget runs out, with loop
-detection to break repetition. Everything runs in the sandbox (scope/egress/budget/audited); it
-needs a real model (`--subscription` or an API key) and no-ops cleanly on the offline stub.
+**It doesn't give up.** When a specialist has no canned path, the orchestrator runs a
+**metacognition** layer (`specialists/metacognition.py`) instead of returning BLOCKED. It
+tries candidate approaches cheap-first — the **agentic reasoning loop** (`agent_loop.py`) on
+the standard tier, a few steps, then escalating to the frontier model only when the challenge
+is worth it (points-per-effort). The loop is a bounded think → act → observe cycle with the
+real sandbox (propose one shell command or Python script, run it, read the output, adapt),
+with loop detection to break repetition. Between candidates it **reflects** — an honest
+`{confidence, blocker, next_idea}` — and **early-stops** when the challenge is blocked on
+something only the operator can supply (a missing handout, credentials, the binary) rather
+than burning the frontier budget; otherwise it carries the next idea into a different angle.
+This is the brain's Cognitive-Control → Candidate-Solutions and Confidence → Early-Stop /
+Reflection arc, flag-as-oracle. Everything runs in the sandbox (scope/egress/budget/audited);
+it needs a real model (`--subscription` or an API key) and no-ops cleanly on the offline stub.
 
 **Live instances** (`nc host port`, no handout): the pwn/misc paths talk to the socket
 directly — read the banner, probe, and, when the model is wired, write and run an interactive

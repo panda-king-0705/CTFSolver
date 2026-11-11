@@ -28,8 +28,8 @@ from .pipeline.verify import verify
 from .pipeline.writeup import generate_writeup
 from .sandbox.base import Sandbox
 from .sandbox.local import LocalSandbox
-from .specialists.agent_loop import agentic_solve
 from .specialists.base import SolveContext, Specialist
+from .specialists.metacognition import metacognitive_solve
 from .specialists.registry import get as get_specialist
 from .specialists.registry import load_defaults
 from .trace import Trace
@@ -197,10 +197,11 @@ class Orchestrator:
                 with trace.span(f"solve:{current.name}", f"escalation={step}"):
                     outcome = await current.solve(ctx)
                     # Don't give up when the specialist has no canned path: reason through it.
-                    # The agentic loop drives the model + sandbox (think -> act -> observe) until
-                    # a flag appears or the budget runs out. No-ops on the offline stub.
+                    # Metacognition tries candidate approaches cheap-first (standard tier, few
+                    # steps), reflects, and escalates to the frontier model only when it's worth
+                    # it — early-stopping on a real external blocker. No-ops on the offline stub.
                     if not outcome.solved:
-                        flag, asteps = await agentic_solve(ctx)
+                        flag, asteps = await metacognitive_solve(ctx, points=challenge.points)
                         outcome.steps = list(outcome.steps) + asteps
                         if flag:
                             outcome = Outcome(

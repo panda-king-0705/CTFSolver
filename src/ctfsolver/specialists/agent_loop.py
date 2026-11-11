@@ -87,17 +87,31 @@ async def _run_action(ctx: SolveContext, i: int, tool: str, inp: str):
     return out, _flags(ctx, out)
 
 
-async def agentic_solve(ctx: SolveContext, *, max_iters: int = 6) -> tuple[Optional[str], list[str]]:
-    """Reason through the challenge with the model + sandbox. Returns (flag | None, steps)."""
+def is_stub(ctx: SolveContext, stage: str = "solve_strategy") -> bool:
+    try:
+        return str(getattr(ctx.llm(stage), "model", "")).startswith("stub:")
+    except Exception:
+        return True
+
+
+async def agentic_solve(ctx: SolveContext, *, stage: str = "solve_strategy",
+                        max_iters: int = 6, hint: Optional[str] = None
+                        ) -> tuple[Optional[str], list[str]]:
+    """Reason through the challenge with the model + sandbox. `stage` picks the model tier
+    (candidate selection runs this cheap-then-dear); `hint` carries a prior reflection's next
+    idea so a new candidate takes a genuinely different angle. Returns (flag | None, steps)."""
     steps: list[str] = []
-    client = ctx.llm("solve_strategy")
+    client = ctx.llm(stage)
     if str(getattr(client, "model", "")).startswith("stub:"):
         steps.append("agentic loop skipped: needs a real model "
                      "(run with --subscription or an API key)")
         return None, steps
 
-    ctx.trace.note("solve", "no specialist flag yet — entering the agentic reasoning loop")
+    ctx.trace.note("solve", "entering the agentic reasoning loop")
     context = _context(ctx)
+    if hint:
+        context += ("\n\nA previous approach did not find the flag. Reflection / next idea to "
+                    f"try: {hint}\nTake a genuinely DIFFERENT angle from before.")
     history: list[str] = []
     seen: dict[str, int] = {}  # loop detection: repeated actions get a nudge, not a re-run
 
