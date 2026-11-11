@@ -21,6 +21,7 @@ from typing import Optional
 from ..models import Target
 from .base import SolveContext
 from .runner import extract_flags, llm_write_and_run, run_script
+from .smb import looks_like_smb, solve_smb
 
 # Conservative generic probes for first contact: a bare newline, then a few of the most
 # common "pick an option / say yes" tokens. Enough to trip flag-on-prompt services; the
@@ -110,6 +111,15 @@ async def solve_remote(ctx: SolveContext, remote: Target) -> tuple[Optional[str]
     where = f"{remote.host}:{remote.port}"
     ctx.trace.note("solve", f"first contact with {where}")
 
+    # 0) if it looks like SMB (hint or classic ports), try the file-share path first
+    tried_smb = False
+    if looks_like_smb(ctx, remote):
+        tried_smb = True
+        flag, smb_steps = await solve_smb(ctx, remote)
+        steps.extend(smb_steps)
+        if flag:
+            return flag, steps
+
     # 1) connect + read the banner
     transcript, flags = await first_contact(ctx, remote)
     if transcript.startswith("CONNECT_ERROR"):
@@ -119,6 +129,14 @@ async def solve_remote(ctx: SolveContext, remote: Target) -> tuple[Optional[str]
     if flags:
         steps.append("flag present in the banner on connect")
         return flags[0], steps
+
+    # 1a) a silent service (no banner) may be a binary protocol like SMB -- probe it
+    if not tried_smb and not transcript.strip():
+        tried_smb = True
+        flag, smb_steps = await solve_smb(ctx, remote)
+        steps.extend(smb_steps)
+        if flag:
+            return flag, steps
 
     # 1b) a couple of generic probes, in case the flag is one trivial prompt away
     transcript2, flags = await first_contact(ctx, remote, sends=DEFAULT_PROBES)

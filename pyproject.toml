@@ -24,8 +24,12 @@ providers = [
 pwn = [
   "pwntools>=4.12",
 ]
+smb = [
+  "impacket>=0.11",
+]
 dev = [
   "pytest>=8",
+  "impacket>=0.11",
 ]
 
 [project.scripts]

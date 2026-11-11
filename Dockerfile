@@ -42,8 +42,9 @@ WORKDIR /app
 # Install the package editable, keeping the repo layout under /app. The demo and the
 # memory seed resolve examples/ and data/ *relative to the source tree* (parents[3]),
 # so the tree must stay intact rather than collapse into site-packages.
-# Build-arg EXTRAS bakes in optional deps, e.g. --build-arg EXTRAS='[providers]'.
-ARG EXTRAS=""
+# The 'smb' extra (impacket) ships by default so live SMB instances solve out of the box.
+# EXTRAS adds more, e.g. --build-arg EXTRAS='[smb,providers]' for the Anthropic/OpenAI SDKs.
+ARG EXTRAS="[smb]"
 COPY pyproject.toml README.md ./
 COPY src ./src
 COPY data ./data

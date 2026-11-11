@@ -64,6 +64,8 @@ RUN pip install "pycryptodome==3.21.0" "sympy==1.13.3" "gmpy2==2.2.1" "z3-solver
 RUN pip install "angr==9.2.123" "bitstring<5" "pycparser==2.21" "setuptools<81"
 # forensics / web / misc
 RUN pip install "volatility3==2.11.0" "requests==2.32.3" "pyOpenSSL==24.2.1" "scapy==2.6.0"
+# smb (file-share instances): impacket for anonymous enumeration + file retrieval
+RUN pip install "impacket==0.12.0"
 
 # --- optional heavyweights (uncomment as needed) -----------------------------
 # Ghidra (headless decompiler) -- ~1GB incl. JDK:
