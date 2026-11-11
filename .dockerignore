@@ -1,0 +1,15 @@
+# keep the build context lean and secrets out of the image
+.git
+.github
+.env
+.venv
+**/__pycache__
+*.pyc
+*.egg-info
+.pytest_cache
+*.db
+writeups/
+examples/traces/*.json
+docs
+CONTRIBUTING.md
+HANDOFF.md
