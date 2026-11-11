@@ -171,6 +171,43 @@ def run_solve(payload: dict, cfg: ServerConfig,
     }
 
 
+CHAT_SYSTEM = (
+    "You are the ctfsolver agent: a concise, practical CTF-solving assistant. You help with "
+    "pwn, web, rev, crypto, forensics, misc, and live instances (SMB / printer / file shares, "
+    "interactive nc services). You can also SOLVE a live instance directly: tell the user to "
+    "paste `nc host port` or a URL and you'll run the pipeline and stream the trace. Keep "
+    "answers short and actionable; give concrete commands. Never invent a flag."
+)
+
+
+def chat_reply(messages: list, cfg: ServerConfig) -> dict:
+    """One conversational turn with the configured model. Honest about the backend: on the
+    offline stub it says so (and returns the stub's canned text) rather than faking reasoning."""
+    from .config import Tier
+    from .llm.base import Message, get_client
+    from .llm.stub import StubClient
+
+    settings = Settings()
+    if cfg.subscription:
+        settings.tier_models = subscription_tier_models()
+    model = settings.tier_models.get(Tier.FRONTIER) or "stub:frontier"
+    try:
+        client = get_client(model)
+    except Exception:
+        client = StubClient(str(model).split(":")[-1])
+
+    msgs = [Message(m.get("role", "user"), m.get("content", ""))
+            for m in (messages or [])[-16:] if m.get("content")]
+    if not msgs:
+        return {"error": "empty message"}
+    try:
+        resp = asyncio.run(client.complete(msgs, system=CHAT_SYSTEM, max_tokens=800))
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    model_name = str(getattr(resp, "model", "") or client.model)
+    return {"reply": resp.text, "model": model_name, "stub": model_name.startswith("stub:")}
+
+
 # --------------------------------------------------------------------------- #
 # HTTP layer
 # --------------------------------------------------------------------------- #
@@ -221,6 +258,13 @@ def make_handler(cfg: ServerConfig):
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+            if parsed.path == "/api/chat":
+                try:
+                    reply = chat_reply(self._read_body().get("messages", []), cfg)
+                except Exception as exc:
+                    reply = {"error": f"{type(exc).__name__}: {exc}"}
+                self._send_json(reply)
+                return
             if parsed.path != "/api/solve":
                 self._send_json({"error": "not found"}, status=404)
                 return
@@ -430,6 +474,22 @@ pre.io{white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-s
 details>summary{cursor:pointer;color:var(--muted);font-size:12px;margin-top:10px}
 pre.writeup{white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;background:var(--surface-2);
   border:1px solid var(--line);border-radius:var(--radius-ctl);padding:10px;max-height:360px;overflow:auto;margin-top:8px}
+/* chat */
+.chatpanel{display:flex;flex-direction:column}
+.chatpanel .head .mini{font-size:11px;color:var(--muted)}
+.chatpanel .head .mini input{width:52px;padding:2px 5px;font-size:11px;display:inline-block}
+.chat{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:9px;min-height:260px;max-height:58vh}
+.msg{display:flex} .msg.user{justify-content:flex-end}
+.bubble{max-width:88%;padding:8px 10px;border-radius:10px;font-size:12.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.msg.agent .bubble{background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:3px}
+.msg.user .bubble{background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:3px}
+.bubble code{font-family:var(--mono);font-size:11.5px;background:rgba(127,127,127,.18);padding:1px 4px;border-radius:3px}
+.bubble .flagtext{font-family:var(--mono);color:var(--good)}
+.typing{display:inline-block;color:var(--muted);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.3}}
+.composer{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.composer textarea{min-height:0;height:auto;flex:1;resize:none}
+.composer .btn{width:auto;margin-top:0;align-self:stretch;padding:0 16px}
 </style>
 </head>
 <body>
@@ -443,21 +503,18 @@ pre.writeup{white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;backgr
   <button class="iconbtn" id="theme" title="Toggle theme">◐ theme</button>
 </header>
 <div class="wrap">
-  <!-- launch -->
-  <section class="panel" style="align-self:start">
-    <div class="head"><h2>Challenge</h2></div>
-    <div class="body">
-      <label>Live instance <span class="muted">(nc host port, or a URL)</span></label>
-      <input id="target" placeholder="nc chatelaine.cylabacademy.net 28942">
-      <label>…or a bundled example</label>
-      <select id="example"></select>
-      <label class="check"><input type="checkbox" id="useRaw"> paste a raw spec instead</label>
-      <textarea id="rawspec" style="display:none" placeholder='{"name":"demo","targets":["nc host port"],"flag_format":"[A-Za-z0-9_]+\\{[^}]+\\}"}'></textarea>
-      <label>Budget (USD)</label>
-      <input id="budget" type="number" value="2" step="0.5" min="0">
-      <button class="btn" id="go">Solve ▶</button>
-      <p class="hint" id="hint"></p>
+  <!-- agent chat -->
+  <section class="panel chatpanel" style="align-self:start">
+    <div class="head"><h2>Agent</h2><span class="spacer"></span>
+      <span class="mini">budget $<input id="budget" type="number" value="2" step="0.5" min="0"></span></div>
+    <div class="chat" id="chat">
+      <div class="msg agent"><div class="bubble">I'm the CTF solver. Paste a live instance (<code>nc host port</code> or a URL) and I'll solve it — the full trace streams on the right. Or ask me anything about a challenge.</div></div>
     </div>
+    <div class="composer">
+      <textarea id="msg" rows="2" placeholder="Message the agent, or paste an instance to solve…"></textarea>
+      <button class="btn" id="send">Send</button>
+    </div>
+    <p class="hint" id="hint"></p>
   </section>
   <!-- run -->
   <section>
@@ -659,27 +716,17 @@ function renderResult(msg){
   p.appendChild(bd);r.appendChild(p);
 }
 
-// ---- launch ----
-async function loadExamples(){
-  try{const j=await(await fetch("/api/examples")).json();const sel=$("#example");
-    (j.examples||[]).forEach(e=>{const o=el("option");o.value=e.id;o.textContent=e.name+(e.category?" ["+e.category+"]":"");o.title=e.description||"";sel.appendChild(o);});
-  }catch(e){}
-}
-$("#useRaw").addEventListener("change",e=>{$("#rawspec").style.display=e.target.checked?"block":"none";$("#example").disabled=e.target.checked;$("#target").disabled=e.target.checked;});
+// ---- theme ----
 $("#theme").onclick=()=>{const cur=document.documentElement.getAttribute("data-theme");const next=cur==="dark"?"light":(cur==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark"));document.documentElement.setAttribute("data-theme",next);try{localStorage.setItem("ctfsolver.theme",next);}catch(e){}};
 
+// ---- run a solve (streams the trace into the waterfall); calls onDone(summary,writeup,err) ----
 let clock=null;
-async function solve(){
+async function runSolve(body,onDone){
   if(RUNNING)return;
   EVENTS=[];SELECTED=null;SUMMARY=null;$("#result").innerHTML="";$("#detail").style.display="none";$("#glass").classList.remove("with-panel");
-  let body;const target=$("#target").value.trim();
-  if($("#useRaw").checked){try{body={spec:JSON.parse($("#rawspec").value)};}catch(e){$("#hint").textContent="raw spec is not valid JSON";return;}}
-  else if(target){body={name:"instance",targets:[target]};}
-  else{body={example:$("#example").value};}
   body.budget_usd=parseFloat($("#budget").value)||2;
-  RUNNING=true;NOW=0;$("#go").disabled=true;$("#hint").textContent="running…";
+  RUNNING=true;NOW=0;let T0=performance.now();
   clock=setInterval(()=>{if(EVENTS.length){NOW=EVENTS[0].ts+(performance.now()-T0)/1000;renderWF();renderKPIs();}},250);
-  let T0=performance.now();
   try{
     const res=await fetch("/api/solve?stream=1",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const rd=res.body.getReader(),dec=new TextDecoder();let buf="";
@@ -687,21 +734,54 @@ async function solve(){
       let nl;while((nl=buf.indexOf("\n"))>=0){const line=buf.slice(0,nl);buf=buf.slice(nl+1);if(!line.trim())continue;
         const m=JSON.parse(line);
         if(m.type==="event"){EVENTS.push(m);if(EVENTS.length===1)T0=performance.now();NOW=Math.max(NOW,m.ts);renderWF();renderKPIs();}
-        else if(m.type==="summary"){renderResult(m);$("#hint").textContent="done";}
-        else if(m.type==="error"){$("#hint").textContent="error: "+m.error;}
+        else if(m.type==="summary"){renderResult(m);if(onDone)onDone(m.summary,m.writeup,null);}
+        else if(m.type==="error"){if(onDone)onDone(null,null,m.error);}
       }
     }
-  }catch(e){$("#hint").textContent="request failed: "+e;}
-  RUNNING=false;$("#go").disabled=false;clearInterval(clock);renderWF();renderKPIs();
+  }catch(e){if(onDone)onDone(null,null,String(e));}
+  RUNNING=false;clearInterval(clock);renderWF();renderKPIs();
 }
-$("#go").addEventListener("click",solve);
+
+// ---- chat with the agent ----
+const TARGET_RE=/(nc\s+[a-z0-9.\-]+\s+\d{1,5}|https?:\/\/\S+|[a-z0-9][a-z0-9.\-]*\s*:\s*\d{2,5})/i;
+function detectTarget(s){const m=s.match(TARGET_RE);return m?m[0].replace(/\s*:\s*/,":").trim():null;}
+const CHAT=[];
+function esc(s){return(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function addMsg(role,html){const c=$("#chat");const w=el("div","msg "+role);const b=el("div","bubble");if(html instanceof Node)b.appendChild(html);else b.innerHTML=html;w.appendChild(b);c.appendChild(w);c.scrollTop=c.scrollHeight;return b;}
+function setBackend(stub,model){const bb=$("#backend"),bt=$("#backend-t");if(stub){bb.className="badge stub";bt.textContent="model: stub (offline)";}else if(model){bb.className="badge live";bt.textContent="model: "+model;}}
+
+async function send(){
+  const ta=$("#msg");const text=ta.value.trim();if(!text||RUNNING)return;
+  ta.value="";addMsg("user",esc(text));
+  const target=detectTarget(text);
+  const solveIntent=target&&(/\b(solve|flag|pwn|crack|get|grab|retrieve|run|try|exploit|enumerate)\b/i.test(text)||/^(nc\s|https?:\/\/)/i.test(text));
+  if(solveIntent){
+    const b=addMsg("agent","Solving <code>"+esc(target)+"</code> — streaming the trace →");
+    await runSolve({name:"instance",targets:[target]},(summary,writeup,err)=>{
+      if(err){b.innerHTML="⚠ "+esc(err);return;}
+      if(summary&&summary.flag){b.innerHTML="⚑ <b class='flagtext'>"+esc(summary.flag)+"</b>"+(summary.verified?" ✓ verified":" (unverified)")+" — via "+esc(summary.specialist||"solver")+". Full trace on the right →";}
+      else{b.innerHTML="No flag recovered"+((summary&&summary.notes)?": "+esc(summary.notes):"")+". The trace shows exactly what was tried →";}
+    });
+    return;
+  }
+  CHAT.push({role:"user",content:text});
+  const b=addMsg("agent","<span class='typing'>…</span>");
+  try{
+    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:CHAT})});
+    const j=await r.json();
+    if(j.error){b.innerHTML="⚠ "+esc(j.error);return;}
+    b.textContent=j.reply||"(no reply)";
+    CHAT.push({role:"assistant",content:j.reply||""});
+    setBackend(j.stub,j.model);
+  }catch(e){b.innerHTML="⚠ "+esc(e);}
+}
+$("#send").addEventListener("click",send);
+$("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
+
 renderFilters();renderKPIs();
-loadExamples().then(()=>{
-  // deep link: /?run=<example> or /?target=nc+host+port auto-starts a real solve
-  const q=new URLSearchParams(location.search);
-  if(q.get("target")){$("#target").value=q.get("target");solve();}
-  else if(q.get("run")){const sel=$("#example");sel.value=q.get("run");if(sel.value===q.get("run"))solve();}
-});
+// deep link: /?target=nc+host+port auto-starts a solve from chat
+const q=new URLSearchParams(location.search);
+if(q.get("target")){$("#msg").value="solve "+q.get("target");send();}
 </script>
 </body>
 </html>

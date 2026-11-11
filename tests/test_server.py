@@ -86,6 +86,27 @@ def test_http_solve_nonstreaming():
         httpd.shutdown()
 
 
+def test_chat_reply_uses_configured_backend():
+    from ctfsolver.server import ServerConfig, chat_reply
+    r = chat_reply([{"role": "user", "content": "how do I approach a pwn challenge?"}],
+                   ServerConfig())
+    assert r.get("stub") is True                 # offline stub, honestly flagged
+    assert r["model"].startswith("stub:")
+    assert isinstance(r["reply"], str)
+    assert chat_reply([], ServerConfig()).get("error")  # empty -> error, not a crash
+
+
+def test_http_chat_endpoint():
+    httpd, port = _free_server()
+    try:
+        st, body = _post(port, "/api/chat", {"messages": [{"role": "user", "content": "hi"}]})
+        assert st == 200
+        payload = json.loads(body)
+        assert "reply" in payload and payload["stub"] is True
+    finally:
+        httpd.shutdown()
+
+
 def test_http_solve_streaming_ndjson():
     httpd, port = _free_server()
     try:
