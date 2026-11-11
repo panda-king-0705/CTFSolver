@@ -89,6 +89,32 @@ transport controls — the pipeline lane lights up block by block, the budget le
 recovered flag and the generated solver appear — and it accepts your own exported traces by
 drag-drop. `Trace.to_payload()` produces the same JSON programmatically.
 
+## Serve it — the web console + API
+
+Run a live server (stdlib only — no extra dependencies) that hosts the console and solves on
+demand, streaming each run's trace to the browser as it happens:
+
+```sh
+PYTHONPATH=src python -m ctfsolver.cli serve            # http://127.0.0.1:8000
+# or in Docker, with the port published:
+docker run --rm -p 8000:8000 ctfsolver/app:latest       # serve is the image's default CMD
+```
+
+Open the page, pick a bundled example (or paste a spec), hit **Solve**, and watch the pipeline
+light up block by block, ending with the verified flag and the generated writeup. The JSON API
+underneath:
+
+| Endpoint | What it does |
+|---|---|
+| `GET /api/health` | liveness check |
+| `GET /api/examples` | the bundled example challenges |
+| `POST /api/solve` | run a solve; body is a spec or `{"example":"<name>"}`. `?stream=1` streams NDJSON (one trace event per line, then a final summary); without it, returns the whole run |
+
+It binds `127.0.0.1` by default — a solve runs real tooling in the sandbox, so expose it wider
+(`--host 0.0.0.0`) only on a trusted network, per "for CTF and authorized testing only". Add
+`--container` to run solves in the container sandbox and `--subscription` to route the models
+through your Claude CLI.
+
 ## Measure it — the eval harness
 
 Run the solver over a challenge set and get metrics you can tune against:

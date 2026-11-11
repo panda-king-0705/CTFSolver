@@ -1,7 +1,8 @@
 # ctfsolver control-plane image -- runs the orchestrator / CLI (the `ctfsolver` entry point).
 #
 #   docker build -t ctfsolver/app:latest .
-#   docker run --rm ctfsolver/app:latest demo            # offline toy challenge, end to end
+#   docker run --rm -p 8000:8000 ctfsolver/app:latest    # web console on :8000 (default CMD)
+#   docker run --rm ctfsolver/app:latest demo            # or the offline toy challenge
 #
 # The control plane is stdlib-only, so the base install needs no dependencies. This image
 # adds the Docker *client* so the ContainerSandbox can drive the toolbox image through a
@@ -56,5 +57,8 @@ RUN useradd -m -u 1000 solver \
   && chown -R solver:solver /app
 USER solver
 
+# The web console/API is the default. It binds 0.0.0.0 so a published port works;
+# publish it with `-p 8000:8000`. Override with any other subcommand (demo, solve, eval).
+EXPOSE 8000
 ENTRYPOINT ["ctfsolver"]
-CMD ["demo"]
+CMD ["serve", "--host", "0.0.0.0", "--port", "8000"]

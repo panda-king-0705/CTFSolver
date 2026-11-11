@@ -106,6 +106,16 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("demo", help="run the offline toy challenge end to end")
 
+    sv = sub.add_parser("serve", help="serve the web UI + JSON API")
+    sv.add_argument("--host", default="127.0.0.1",
+                    help="bind address (default 127.0.0.1; use 0.0.0.0 to expose)")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--budget-usd", type=float, default=2.0, help="default budget per solve")
+    sv.add_argument("--container", action="store_true",
+                    help="run solves in the container sandbox when a daemon is available")
+    sv.add_argument("--subscription", action="store_true",
+                    help="route model calls through the local `claude` CLI")
+
     ev = sub.add_parser("eval", help="run the solver over a challenge set and measure it")
     ev.add_argument("path", help="a directory of challenge.json files, or a suite JSON")
     ev.add_argument("--budget-usd", type=float, default=2.0)
@@ -134,6 +144,23 @@ def main(argv: list[str] | None = None) -> int:
         if saved:
             print(f"[writeup] saved {saved}", file=sys.stderr)
         return _report(rep)
+
+    if args.cmd == "serve":
+        from .server import ServerConfig, serve
+
+        cfg = ServerConfig(budget_usd=args.budget_usd, use_container=args.container,
+                           subscription=args.subscription)
+        httpd = serve(args.host, args.port, cfg)
+        url = f"http://{args.host}:{args.port}"
+        print(f"[serve] ctfsolver console on {url}  (Ctrl-C to stop)", file=sys.stderr)
+        if args.container:
+            print("[serve] solves use the container sandbox", file=sys.stderr)
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\n[serve] shutting down", file=sys.stderr)
+            httpd.shutdown()
+        return 0
 
     if args.cmd == "eval":
         import asyncio as _asyncio
