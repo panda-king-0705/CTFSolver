@@ -13,6 +13,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
 
 # --- system packages: shared + per-category CLI tools -------------------------
+# radare2 and upx are not available in bookworm's repos, so both are installed from
+# their upstream release artifacts below (pinned, overridable via build-args).
+ARG RADARE2_VERSION=6.2.6
+ARG UPX_VERSION=5.3.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
       # shared
       build-essential git curl wget file xxd jq unzip xz-utils p7zip-full ca-certificates \
@@ -23,6 +27,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tshark binwalk foremost exiftool steghide sleuthkit \
       # ruby (for one_gadget, zsteg)
       ruby ruby-dev \
+  && wget -q "https://github.com/radareorg/radare2/releases/download/${RADARE2_VERSION}/radare2_${RADARE2_VERSION}_amd64.deb" -O /tmp/radare2.deb \
+  && apt-get install -y --no-install-recommends /tmp/radare2.deb \
+  && wget -q "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz" -O /tmp/upx.tar.xz \
+  && tar -xJf /tmp/upx.tar.xz -C /tmp \
+  && install -m 0755 "/tmp/upx-${UPX_VERSION}-amd64_linux/upx" /usr/local/bin/upx \
+  && rm -rf /tmp/radare2.deb /tmp/upx.tar.xz "/tmp/upx-${UPX_VERSION}-amd64_linux" \
   && rm -rf /var/lib/apt/lists/*
 
 # --- UPX (rev: unpack packed binaries) ---------------------------------------
@@ -46,8 +56,12 @@ RUN gem install --no-document one_gadget zsteg
 RUN pip install "pwntools==4.13.1" "ROPgadget==7.5" "unicorn==2.1.1" "capstone==5.0.1"
 # crypto
 RUN pip install "pycryptodome==3.21.0" "sympy==1.13.3" "gmpy2==2.2.1" "z3-solver==4.13.0.0"
-# rev (angr is large; pin it and let it pull its deps)
-RUN pip install "angr==9.2.123"
+# rev (angr is large; pin it and let it pull its deps). Pins keep its old deps working on
+# Python 3.12:
+#   - pyvex uses bitstring.ConstBitStream, removed in bitstring 5.0 → pin the 4.x API
+#   - angr's sim_type CLexer sets .filename, which pycparser 2.22 made read-only → pin 2.21
+#   - angr pins unicorn 2.0.1, which imports distutils (gone in 3.12) → setuptools<81 restores it
+RUN pip install "angr==9.2.123" "bitstring<5" "pycparser==2.21" "setuptools<81"
 # forensics / web / misc
 RUN pip install "volatility3==2.11.0" "requests==2.32.3" "pyOpenSSL==24.2.1" "scapy==2.6.0"
 
