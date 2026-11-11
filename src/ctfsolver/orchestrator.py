@@ -42,20 +42,39 @@ _EST_COST = {
 
 
 class _BudgetedClient:
-    """Wraps any LLMClient so every call is metered against the challenge ledger."""
+    """Wraps any LLMClient so every call is metered against the ledger and shows up in the
+    trace as an `llm` event -- stage, model, latency, tokens, cost, and a reply preview.
+    That event is how the console shows the agent actually thinking; `stub=True` marks the
+    offline placeholder model honestly, so a stubbed run never masquerades as real reasoning."""
 
-    def __init__(self, inner: LLMClient, ledger: Ledger) -> None:
+    def __init__(self, inner: LLMClient, ledger: Ledger,
+                 trace: Optional[Trace] = None, stage: str = "") -> None:
         self._inner = inner
         self._ledger = ledger
+        self._trace = trace
+        self._stage = stage
         self.model = inner.model
 
     async def complete(self, messages, *, system=None, max_tokens=1024, temperature=0.2):
         if not self._ledger.can_afford(0.01, 1):
             raise BudgetExceeded("no budget left for an LLM call")
+        import time as _time
+        t0 = _time.time()
         resp = await self._inner.complete(
             messages, system=system, max_tokens=max_tokens, temperature=temperature
         )
+        latency_ms = round((_time.time() - t0) * 1000)
         self._ledger.charge(usd=resp.cost_usd, calls=1, what="llm")
+        if self._trace is not None:
+            block = (self._stage or "solve").split("_", 1)[0]
+            self._trace.emit(
+                block, "llm", f"{self.model} · {latency_ms}ms",
+                stage=self._stage, model=str(self.model),
+                stub=str(self.model).startswith("stub:"),
+                latency_ms=latency_ms, tokens_in=resp.input_tokens,
+                tokens_out=resp.output_tokens, cost=round(resp.cost_usd, 6),
+                preview=(resp.text or "").strip().replace("\n", " ")[:200],
+            )
         return resp
 
 
@@ -103,9 +122,11 @@ class Orchestrator:
                 self._client_cache[model] = StubClient(model.split(":")[-1])
         return self._client_cache[model]
 
-    def _llm_factory(self, ledger: Ledger) -> Callable[[str], LLMClient]:
+    def _llm_factory(self, ledger: Ledger,
+                     trace: Optional[Trace] = None) -> Callable[[str], LLMClient]:
         def factory(stage: str) -> LLMClient:
-            return _BudgetedClient(self._client(self.settings.model_for(stage)), ledger)
+            return _BudgetedClient(self._client(self.settings.model_for(stage)), ledger,
+                                   trace=trace, stage=stage)
         return factory
 
     # ------------------------------------------------------------------ #
@@ -120,7 +141,7 @@ class Orchestrator:
         trace.challenge_id = challenge.id
         audit = AuditLog(trace, challenge.id)
         scope = ScopePolicy.for_challenge(challenge)
-        llm_factory = self._llm_factory(ledger)
+        llm_factory = self._llm_factory(ledger, trace)
 
         with trace.span("orchestrate", challenge.name):
             audit.record("orchestrator", "scope", "authorized",

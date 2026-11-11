@@ -100,9 +100,13 @@ PYTHONPATH=src python -m ctfsolver.cli serve            # http://127.0.0.1:8000
 docker run --rm -p 8000:8000 ctfsolver/app:latest       # serve is the image's default CMD
 ```
 
-Open the page, pick a bundled example (or paste a spec), hit **Solve**, and watch the pipeline
-light up block by block, ending with the verified flag and the generated writeup. The JSON API
-underneath:
+Open the page, type a live instance (`nc host port`) or pick a bundled example, hit **Solve**,
+and watch the **full trace** stream in a glass-box waterfall: every stage span, every model
+call (with model/latency/tokens/cost, and honestly badged `stub (offline)` when no real model
+is wired), and every sandbox command **with its real stdout** — click any row for its detail
+(the generated solver source, the actual command output, the model's reply preview). The point
+is transparency: on the offline stub, `MODEL CALLS: 0` makes plain that a deterministic example
+is not AI reasoning. The JSON API underneath:
 
 | Endpoint | What it does |
 |---|---|
@@ -195,6 +199,13 @@ flag-format gate.
 challenge. `crypto` and `misc` solve classic encoding/weak-cipher challenges fully
 offline today; the rest do what they can offline (strings/secret/magic-byte recon) and
 lay out a concrete plan that runs once the container sandbox is enabled.
+
+**Live instances** (`nc host port`, no handout): the pwn/misc paths talk to the socket
+directly — read the banner, probe, and, when the model is wired, write and run an interactive
+solver. A silent service is probed for **SMB** (`specialists/smb.py`, the `smb` extra): an
+anonymous session, share enumeration, and file retrieval pull a flag off a world-readable
+share (the classic "a file was sent to the print/file server" challenge). All of it runs in
+the sandbox, so `--container` keeps egress pinned to the target.
 
 ## What's real vs. what plugs in
 

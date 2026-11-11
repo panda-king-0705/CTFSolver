@@ -43,7 +43,11 @@ async def run_script(
     argv = [interpreter, filename, *(args or [])]
     res = await ctx.sandbox.exec(argv, timeout=timeout)
     flags = extract_flags(ctx, res.stdout, res.stderr)
-    ctx.trace.cmd("solve", " ".join(argv), rc=res.returncode, flag=bool(flags))
+    # carry the real stdout/stderr into the trace so the console shows actual output,
+    # not just a command line -- the difference between a live run and a planted result.
+    ctx.trace.cmd("solve", " ".join(argv), rc=res.returncode, flag=bool(flags),
+                  stdout=(res.stdout or "")[:6000], stderr=(res.stderr or "")[:2000],
+                  seconds=round(getattr(res, "duration", 0.0) or 0.0, 3))
     return res, flags
 
 
