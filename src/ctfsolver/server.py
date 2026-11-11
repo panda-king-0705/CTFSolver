@@ -356,7 +356,9 @@ INDEX_HTML = r"""<!doctype html>
 <div class="wrap">
   <div class="panel">
     <h2>Challenge</h2>
-    <label>Bundled example</label>
+    <label>Live instance <span class="muted">(nc host port, or a URL)</span></label>
+    <input id="target" placeholder="nc chatelaine.cylabacademy.net 11517">
+    <label>…or a bundled example</label>
     <select id="example"></select>
     <label><input type="checkbox" id="useRaw" style="width:auto;margin-right:6px">
       paste a raw spec instead</label>
@@ -432,9 +434,12 @@ async function solve(){
   $("#go").disabled = true; $("#result").classList.remove("show");
   $("#log").innerHTML = ""; renderPipeline([]);
   let body;
+  const target = $("#target").value.trim();
   if($("#useRaw").checked){
     try{ body = {spec: JSON.parse($("#rawspec").value)}; }
     catch(e){ $("#hint").textContent = "raw spec is not valid JSON"; $("#go").disabled=false; return; }
+  } else if(target){
+    body = {name: "instance", targets: [target]};
   } else {
     body = {example: $("#example").value};
   }

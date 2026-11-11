@@ -16,6 +16,7 @@ from typing import Optional
 from ..models import Artifact, Category, Outcome, Target
 from .base import SolveContext, Specialist
 from .registry import register
+from .remote import solve_remote
 from .runner import run_script
 
 
@@ -55,6 +56,16 @@ class PwnSpecialist(Specialist):
             # recon it is allowed to run (works in the container sandbox)
             res = await ctx.sandbox.exec(["checksec", "--file", binary.name])
             steps.append(f"checksec -> {'ok' if res.ok else res.stderr.strip() or 'unavailable offline'}")
+
+        # Live instance: talk to the socket. This is the whole solve when there's no binary
+        # (an interactive service), and a quick first try even when there is one -- the flag
+        # may just be printed, or one prompt away. Runs in the sandbox (egress-confined).
+        if remote is not None:
+            flag, rsteps = await solve_remote(ctx, remote)
+            steps.extend(rsteps)
+            if flag:
+                return self.found(flag, f"interactive solve against {remote.host}:{remote.port}",
+                                  steps)
 
         # LIVE exploit: only in a real container (running the target binary + pwntools
         # against the remote needs isolation). Build the exploit, test locally, fire remote.

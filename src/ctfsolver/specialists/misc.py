@@ -14,6 +14,7 @@ import codecs
 from ..models import Category, Outcome
 from .base import SolveContext, Specialist
 from .registry import register
+from .remote import solve_remote
 
 
 def _decodings(data: bytes):
@@ -63,6 +64,15 @@ class MiscSpecialist(Specialist):
                     if how != "raw":
                         steps.append(f"decode {how} -> flag")
                     return self.found(flag, src, steps)
+
+        # a live instance (nc host port) with no handouts: talk to it
+        remote = next((t for t in ctx.challenge.targets if t.kind == "tcp"), None)
+        if remote is not None:
+            flag, rsteps = await solve_remote(ctx, remote)
+            steps.extend(rsteps)
+            if flag:
+                return self.found(flag, f"interactive solve against {remote.host}:{remote.port}",
+                                  steps)
 
         return self.failed("no flag via strings/encoding ladder; may need a solver script "
                            "or a different category", steps)
