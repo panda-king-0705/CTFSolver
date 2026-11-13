@@ -9,12 +9,45 @@ LLM-written solver), so running it through the local sandbox is fine. Running a
 """
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from typing import Optional
 
 from ..sandbox.base import ExecResult
 from .base import SolveContext
+
+# Running model-written code is only safe when it is isolated from the host. The offline stub
+# is deterministic and not attacker-steerable, so its generated code is fine on any sandbox;
+# a REAL model, whose output is shaped by attacker-controlled challenge content, is not. So we
+# refuse generated code on a non-isolated sandbox whenever a real model is configured, unless
+# the operator explicitly accepts the risk. This closes the gap where a prompt-injected solver
+# could read ~/.ssh, curl|sh, or open an unconfined socket on the host.
+_ALLOW_UNSANDBOXED = os.getenv("CTFSOLVER_ALLOW_UNSANDBOXED") == "1"
+
+
+def _real_models(ctx: SolveContext) -> bool:
+    settings = getattr(ctx, "settings", None)
+    if settings is None:
+        return False
+    try:
+        return any(not str(m).startswith("stub:") for m in settings.tier_models.values())
+    except Exception:
+        return False
+
+
+def _isolation_refusal(ctx: SolveContext, filename: str) -> Optional[ExecResult]:
+    """Return a refusal ExecResult if generated code must not run here, else None."""
+    if ctx.sandbox.isolated or _ALLOW_UNSANDBOXED or not _real_models(ctx):
+        return None
+    ctx.sandbox.audit.record("sandbox", "exec_refused", filename,
+                             reason="generated code on a non-isolated sandbox with a real model")
+    ctx.trace.note("solve", f"refused to run generated {filename}: a real model's code needs the "
+                            "container sandbox (run with --container, or set "
+                            "CTFSOLVER_ALLOW_UNSANDBOXED=1 to accept host execution)")
+    return ExecResult([filename], returncode=126,
+                      stderr="generated code refused: non-isolated sandbox with a real model; "
+                             "run with --container")
 
 
 def extract_flags(ctx: SolveContext, *texts: str) -> list[str]:
@@ -35,7 +68,12 @@ async def run_script(
     timeout: float = 60.0,
 ) -> tuple[ExecResult, list[str]]:
     """Write `source` into the sandbox as `filename` and run it. Returns (result, flags).
-    The script is the specialist's own code, so this is safe on any sandbox."""
+    Generated code is refused on a non-isolated sandbox when a real model is configured
+    (see `_isolation_refusal`) -- a real model's output is attacker-steerable, so it must be
+    isolated from the host."""
+    refusal = _isolation_refusal(ctx, filename)
+    if refusal is not None:
+        return refusal, []
     ctx.sandbox.write_bytes(filename, source.encode())
     # record the script so the writeup is reproducible (truncated; not shown to the user)
     ctx.trace.emit("solve", "script", filename, lang=interpreter.split("/")[-1],

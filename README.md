@@ -96,9 +96,15 @@ demand, streaming each run's trace to the browser as it happens:
 
 ```sh
 PYTHONPATH=src python -m ctfsolver.cli serve            # http://127.0.0.1:8000
-# or in Docker, with the port published:
-docker run --rm -p 8000:8000 ctfsolver/app:latest       # serve is the image's default CMD
+# or in Docker, published to loopback only (recommended):
+docker run --rm -p 127.0.0.1:8000:8000 ctfsolver/app:latest   # token is in `docker logs`
 ```
+
+`/api/solve` and `/api/chat` run tools and models, so they're a code-execution surface. The
+server **requires a bearer token** (printed at startup / in `docker logs`, or set
+`CTFSOLVER_TOKEN`) and a **loopback `Host`** header (DNS-rebinding / LAN-exposure defence). The
+served page carries the token, so just opening the link works; a cross-origin page can't read
+it. Set `CTFSOLVER_NO_AUTH=1` only on a trusted, isolated host.
 
 Open the page, type a live instance (`nc host port`) or pick a bundled example, hit **Solve**,
 and watch the **full trace** stream in a glass-box waterfall: every stage span, every model
@@ -213,6 +219,11 @@ than burning the frontier budget; otherwise it carries the next idea into a diff
 This is the brain's Cognitive-Control → Candidate-Solutions and Confidence → Early-Stop /
 Reflection arc, flag-as-oracle. Everything runs in the sandbox (scope/egress/budget/audited);
 it needs a real model (`--subscription` or an API key) and no-ops cleanly on the offline stub.
+
+> **Isolation gate.** A real model's generated code is attacker-steerable (challenge content
+> flows into the prompt), so it only runs in the **container** sandbox — on the host
+> (`LocalSandbox`) it is refused unless you opt in with `CTFSOLVER_ALLOW_UNSANDBOXED=1`. Run
+> real-model solves with `--container`. The offline stub is deterministic and runs anywhere.
 
 **Multi-model racing (the swarm).** For a harder challenge, race several models on the *whole*
 challenge in parallel — first flag wins (still whole-challenge, no fragmentation; each racer

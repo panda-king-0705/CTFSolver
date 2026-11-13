@@ -24,10 +24,15 @@ def _get(port, path):
         return r.status, r.read()
 
 
-def _post(port, path, body):
+def _post(port, path, body, token="", host=None):
     data = json.dumps(body).encode()
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    if host:
+        headers["Host"] = host
     req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=data,
-                                 headers={"Content-Type": "application/json"}, method="POST")
+                                 headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=60) as r:
         return r.status, r.read()
 
@@ -77,11 +82,40 @@ def test_http_health_examples_and_index():
 def test_http_solve_nonstreaming():
     httpd, port = _free_server()
     try:
-        st, body = _post(port, "/api/solve", {"example": "toy_xor"})
+        st, body = _post(port, "/api/solve", {"example": "toy_xor"}, token=httpd.auth_token)
         assert st == 200
         payload = json.loads(body)
         assert payload["summary"]["verified"] is True
         assert payload["writeup"]
+    finally:
+        httpd.shutdown()
+
+
+def test_solve_requires_token():
+    import urllib.error
+    httpd, port = _free_server()
+    try:
+        code = None
+        try:
+            _post(port, "/api/solve", {"example": "toy_xor"})  # no token
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 401
+    finally:
+        httpd.shutdown()
+
+
+def test_rejects_non_loopback_host():
+    import urllib.error
+    httpd, port = _free_server()
+    try:
+        code = None
+        try:
+            _post(port, "/api/solve", {"example": "toy_xor"},
+                  token=httpd.auth_token, host="evil.example.com")
+        except urllib.error.HTTPError as e:
+            code = e.code
+        assert code == 403  # DNS-rebinding / LAN-exposure defence
     finally:
         httpd.shutdown()
 
@@ -99,7 +133,7 @@ def test_chat_reply_uses_configured_backend():
 def test_http_chat_endpoint():
     httpd, port = _free_server()
     try:
-        st, body = _post(port, "/api/chat", {"messages": [{"role": "user", "content": "hi"}]})
+        st, body = _post(port, "/api/chat", {"messages": [{"role": "user", "content": "hi"}]}, token=httpd.auth_token)
         assert st == 200
         payload = json.loads(body)
         assert "reply" in payload and payload["stub"] is True
@@ -110,7 +144,7 @@ def test_http_chat_endpoint():
 def test_http_solve_streaming_ndjson():
     httpd, port = _free_server()
     try:
-        st, body = _post(port, "/api/solve?stream=1", {"example": "toy_xor"})
+        st, body = _post(port, "/api/solve?stream=1", {"example": "toy_xor"}, token=httpd.auth_token)
         assert st == 200
         msgs = [json.loads(line) for line in body.decode().splitlines() if line.strip()]
         kinds = [m["type"] for m in msgs]

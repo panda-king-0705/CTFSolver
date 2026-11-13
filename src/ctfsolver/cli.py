@@ -157,7 +157,14 @@ def main(argv: list[str] | None = None) -> int:
                            subscription=args.subscription)
         httpd = serve(args.host, args.port, cfg)
         url = f"http://{args.host}:{args.port}"
-        print(f"[serve] ctfsolver console on {url}  (Ctrl-C to stop)", file=sys.stderr)
+        token = getattr(httpd, "auth_token", "")
+        if getattr(httpd, "require_auth", False):
+            print(f"[serve] ctfsolver console on {url}/  (open this link — it carries the token)",
+                  file=sys.stderr)
+            print(f"[serve] API token (Authorization: Bearer): {token}", file=sys.stderr)
+        else:
+            print(f"[serve] ctfsolver console on {url}  (auth DISABLED via CTFSOLVER_NO_AUTH)",
+                  file=sys.stderr)
         if args.container:
             print("[serve] solves use the container sandbox", file=sys.stderr)
         try:

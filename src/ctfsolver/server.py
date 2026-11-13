@@ -211,9 +211,29 @@ def chat_reply(messages: list, cfg: ServerConfig) -> dict:
 # --------------------------------------------------------------------------- #
 # HTTP layer
 # --------------------------------------------------------------------------- #
-def make_handler(cfg: ServerConfig):
+def make_handler(cfg: ServerConfig, token: str = "", require_auth: bool = False):
+    import secrets
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "ctfsolver/0.1"
+
+        # -- auth ----------------------------------------------------------- #
+        def _host_ok(self) -> bool:
+            # reject non-loopback Host (DNS-rebinding / LAN exposure defence)
+            if not require_auth:
+                return True
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip().strip("[]").lower()
+            return host in ("127.0.0.1", "localhost", "::1", "") or host.startswith("127.")
+
+        def _auth_ok(self) -> bool:
+            # a solve/chat runs tools + models; require the bearer token the page was given
+            if not require_auth:
+                return True
+            hdr = self.headers.get("Authorization", "")
+            if hdr.startswith("Bearer ") and secrets.compare_digest(hdr[7:].strip(), token):
+                return True
+            alt = self.headers.get("X-CTFSolver-Token", "").strip()
+            return bool(alt) and secrets.compare_digest(alt, token)
 
         # -- helpers -------------------------------------------------------- #
         def _send_json(self, obj: Any, status: int = 200) -> None:
@@ -239,9 +259,14 @@ def make_handler(cfg: ServerConfig):
 
         # -- routes --------------------------------------------------------- #
         def do_GET(self) -> None:
+            if not self._host_ok():
+                self._send_json({"error": "forbidden host"}, status=403)
+                return
             path = urlparse(self.path).path
             if path == "/" or path == "/index.html":
-                body = INDEX_HTML.encode()
+                # hand the same-origin page its token; a cross-origin attacker can't read it
+                page = INDEX_HTML.replace("__CTFSOLVER_TOKEN__", token if require_auth else "")
+                body = page.encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
@@ -257,6 +282,12 @@ def make_handler(cfg: ServerConfig):
             self._send_json({"error": "not found"}, status=404)
 
         def do_POST(self) -> None:
+            if not self._host_ok():
+                self._send_json({"error": "forbidden host"}, status=403)
+                return
+            if not self._auth_ok():
+                self._send_json({"error": "unauthorized: missing or bad token"}, status=401)
+                return
             parsed = urlparse(self.path)
             if parsed.path == "/api/chat":
                 try:
@@ -320,9 +351,20 @@ def make_handler(cfg: ServerConfig):
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000, cfg: Optional[ServerConfig] = None):
-    """Build the HTTP server (caller runs ``.serve_forever()``). Returns the server."""
+    """Build the HTTP server (caller runs ``.serve_forever()``). Returns the server.
+
+    /api/solve and /api/chat run tools and models, so they are a code-execution surface. They
+    require a bearer token (printed at startup; override with CTFSOLVER_TOKEN) and a loopback
+    Host header (DNS-rebinding / LAN-exposure defence). Set CTFSOLVER_NO_AUTH=1 to disable on a
+    trusted host (e.g. a throwaway container on an isolated network)."""
+    import os
+    import secrets
     cfg = cfg or ServerConfig()
-    httpd = ThreadingHTTPServer((host, port), make_handler(cfg))
+    require_auth = os.getenv("CTFSOLVER_NO_AUTH") != "1"
+    token = os.getenv("CTFSOLVER_TOKEN") or secrets.token_urlsafe(18)
+    httpd = ThreadingHTTPServer((host, port), make_handler(cfg, token, require_auth))
+    httpd.auth_token = token            # type: ignore[attr-defined]
+    httpd.require_auth = require_auth    # type: ignore[attr-defined]
     return httpd
 
 
@@ -340,7 +382,9 @@ INDEX_HTML = r'''<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <title>ctfsolver console</title>
-<script>try{var t=localStorage.getItem("ctfsolver.theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+<script>try{var t=localStorage.getItem("ctfsolver.theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}
+window.__CTF_TOKEN__="__CTFSOLVER_TOKEN__";
+function authHeaders(){var h={"Content-Type":"application/json"};if(window.__CTF_TOKEN__)h["Authorization"]="Bearer "+window.__CTF_TOKEN__;return h;}</script>
 <style>
 :root{
   color-scheme:light;
@@ -728,7 +772,7 @@ async function runSolve(body,onDone){
   RUNNING=true;NOW=0;let T0=performance.now();
   clock=setInterval(()=>{if(EVENTS.length){NOW=EVENTS[0].ts+(performance.now()-T0)/1000;renderWF();renderKPIs();}},250);
   try{
-    const res=await fetch("/api/solve?stream=1",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const res=await fetch("/api/solve?stream=1",{method:"POST",headers:authHeaders(),body:JSON.stringify(body)});
     const rd=res.body.getReader(),dec=new TextDecoder();let buf="";
     while(true){const{value,done}=await rd.read();if(done)break;buf+=dec.decode(value,{stream:true});
       let nl;while((nl=buf.indexOf("\n"))>=0){const line=buf.slice(0,nl);buf=buf.slice(nl+1);if(!line.trim())continue;
@@ -767,7 +811,7 @@ async function send(){
   CHAT.push({role:"user",content:text});
   const b=addMsg("agent","<span class='typing'>…</span>");
   try{
-    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:CHAT})});
+    const r=await fetch("/api/chat",{method:"POST",headers:authHeaders(),body:JSON.stringify({messages:CHAT})});
     const j=await r.json();
     if(j.error){b.innerHTML="⚠ "+esc(j.error);return;}
     b.textContent=j.reply||"(no reply)";
