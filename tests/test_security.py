@@ -59,6 +59,48 @@ def test_generated_code_allowed_with_stub_model():
         sbx.close()
 
 
+def test_flag_format_sanitized_against_redos():
+    from ctfsolver.models import DEFAULT_FLAG_FORMAT
+    from ctfsolver.pipeline.intake import safe_flag_format
+    assert safe_flag_format(r"flag\{[^}]+\}") == r"flag\{[^}]+\}"      # good pattern kept
+    assert safe_flag_format(r"(a+)+$") == DEFAULT_FLAG_FORMAT           # nested quantifier -> default
+    assert safe_flag_format("(" * 300) == DEFAULT_FLAG_FORMAT           # too long / uncompilable
+    assert safe_flag_format("[") == DEFAULT_FLAG_FORMAT                 # does not compile
+
+
+def test_stage_file_caps_size(tmp_path):
+    import pytest
+    from ctfsolver.guardrails.scope import ScopeError
+    chal = Challenge(name="c", flag_format=r"flag\{[^}]+\}")
+    sbx = _sbx(chal)
+    sbx.MAX_STAGE_BYTES = 16  # tighten for the test
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"A" * 1024)
+    try:
+        with pytest.raises(ScopeError):
+            sbx.stage_file(str(big))
+    finally:
+        sbx.close()
+
+
+def test_local_sandbox_enforces_memory_limit(monkeypatch):
+    import asyncio
+    import ctfsolver.sandbox.local as local
+    if local.resource is None:
+        import pytest
+        pytest.skip("no resource module (non-POSIX)")
+    monkeypatch.setattr(local, "_MEM_BYTES", 256 * 1024 * 1024)  # 256 MiB cap for the child
+    chal = Challenge(name="c", flag_format=r"flag\{[^}]+\}")
+    sbx = _sbx(chal)
+    try:
+        # allocate well past the cap -> the child must fail, not take the host down
+        res = asyncio.run(sbx.exec(
+            ["python3", "-c", "b=bytearray(600*1024*1024); print('ALLOCATED')"], timeout=20))
+        assert "ALLOCATED" not in res.stdout and res.returncode != 0
+    finally:
+        sbx.close()
+
+
 def test_override_env_allows_host_execution(monkeypatch):
     import ctfsolver.specialists.runner as runner
     monkeypatch.setattr(runner, "_ALLOW_UNSANDBOXED", True)

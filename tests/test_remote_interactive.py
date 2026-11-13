@@ -109,7 +109,8 @@ def test_server_run_solve_live_target():
         result = run_solve({"name": "instance", "targets": [f"nc {host} {port}"]},
                            ServerConfig(budget_usd=1.0))
         assert result["summary"]["flag"] == "flag{banner_on_connect}"
-        assert result["summary"]["verified"] is True
+        # no scoreboard configured -> format-valid, honestly NOT verified
+        assert result["summary"]["verified"] is False
     finally:
         stop()
 

@@ -50,8 +50,11 @@ def _isolation_refusal(ctx: SolveContext, filename: str) -> Optional[ExecResult]
                              "run with --container")
 
 
+_MAX_MATCH_BYTES = 512 * 1024  # bound the regex input (ReDoS defence; pattern is sanitized too)
+
+
 def extract_flags(ctx: SolveContext, *texts: str) -> list[str]:
-    blob = "\n".join(t for t in texts if t)
+    blob = "\n".join(t for t in texts if t)[:_MAX_MATCH_BYTES]
     try:
         return list(dict.fromkeys(re.findall(ctx.challenge.flag_format, blob)))[:5]
     except re.error:

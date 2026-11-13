@@ -84,7 +84,14 @@ async def verify(
         cname = getattr(chk, "name", type(chk).__name__)
         trace.note("verify", f"submitting to checker={cname}")
         accepted, detail = await chk.submit(flag.value, challenge)
-        flag.verified = accepted
+        # Honesty: "verified" means a REAL checker (scoreboard / known answer) confirmed it.
+        # The stub only confirms the flag FORMAT -- that is format-valid, not verified, and must
+        # never be presented as verified. The flag still counts as a solve offline (accepted).
+        real_checker = cname != "stub"
+        flag.verified = accepted and real_checker
+        if accepted and not real_checker:
+            trace.note("verify", f"format-valid (no scoreboard; not verified): {flag.value}")
         trace.emit("verify", "flag" if accepted else "note", flag.value,
-                   accepted=accepted, detail=detail, checker=cname)
-        return accepted, {"reason": detail, "flag": flag.value, "checker": cname}
+                   accepted=accepted, verified=flag.verified, detail=detail, checker=cname)
+        return accepted, {"reason": detail, "flag": flag.value, "checker": cname,
+                          "verified": flag.verified, "format_valid": accepted}

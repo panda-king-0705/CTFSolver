@@ -467,6 +467,7 @@ textarea{font-family:var(--mono);min-height:96px;resize:vertical;font-size:12px}
 .kpi .v.mono{font-size:14px}
 .kpi.flag .v{color:var(--good);font-family:var(--mono);font-size:13px;word-break:break-all}
 .kpi.flag.bad .v{color:var(--danger)}
+.kpi.flag.warn .v{color:var(--warn)}
 /* filters */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);
@@ -721,7 +722,7 @@ function renderKPIs(){
   const flag=SUMMARY&&SUMMARY.flag?SUMMARY.flag:null;
   const cards=[["Status",status,""],["Duration",fmtDur(EVENTS.length?t1-t0:0),"mono"],
     ["Events",String(EVENTS.filter(e=>e.kind!=="end").length),"mono"],["Model calls",String(llm.length),"mono"],
-    ["Commands",String(cmd.length),"mono"],["Flag",flag||"—","flag"+(flag&&SUMMARY.verified?"":" bad")]];
+    ["Commands",String(cmd.length),"mono"],["Flag",flag||"—","flag"+(flag?(SUMMARY.verified?"":" warn"):" bad")]];
   const k=$("#kpis");k.innerHTML="";
   for(const[l,v,cls]of cards){const c=el("div","kpi"+(cls==="flag"||cls==="flag bad"?" "+cls:""));
     const L=el("div","l");L.textContent=l;const V=el("div","v"+(cls==="mono"?" mono":""));V.textContent=v;c.appendChild(L);c.appendChild(V);k.appendChild(c);}
@@ -750,8 +751,8 @@ function renderResult(msg){
   const h=el("div","head");const t=el("h2");t.textContent="Result";h.appendChild(t);p.appendChild(h);
   const bd=el("div","body");
   const s=SUMMARY;
-  const fl=el("div","result-flag");fl.style.color=s.flag&&s.verified?"var(--good)":"var(--danger)";
-  fl.textContent=s.flag?("⚑ "+s.flag+(s.verified?"  ✓ verified":"  (unverified)")):"no flag recovered";
+  const fl=el("div","result-flag");fl.style.color=s.flag?(s.verified?"var(--good)":"var(--warn)"):"var(--danger)";
+  fl.textContent=s.flag?("⚑ "+s.flag+(s.verified?"  ✓ verified by checker":"  · format-valid (no scoreboard)")):"no flag recovered";
   bd.appendChild(fl);
   const meta=el("div","muted small");meta.style.marginTop="6px";
   meta.textContent="status "+s.status+" · specialist "+(s.specialist||"—")+" · $"+(s.spent_usd!=null?s.spent_usd:0)+" · "+(s.tool_calls!=null?s.tool_calls:0)+" tool calls"+(s.notes?" · "+s.notes:"");

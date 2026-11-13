@@ -10,6 +10,34 @@ from typing import Optional
 
 from .base import ExecResult, Sandbox
 
+try:  # resource limits are POSIX-only; a missing module just means no extra caps
+    import resource
+except ImportError:  # pragma: no cover - non-POSIX
+    resource = None  # type: ignore
+
+# Caps applied to every local child process: generated code runs here on the stub path (and on
+# the opted-in host path), so bound CPU, memory, file size and process count to stop a runaway
+# or fork-bomb from taking the host down. The container path has its own --memory/--pids/--cpus.
+_CPU_SECONDS = 60
+_MEM_BYTES = 2 * 1024 * 1024 * 1024      # 2 GiB address space
+_FSIZE_BYTES = 256 * 1024 * 1024         # 256 MiB max single file written
+_NPROC = 256                             # fork-bomb guard
+
+
+def _limit_child() -> None:  # pragma: no cover - runs in the forked child
+    if resource is None:
+        return
+    for res, soft in ((resource.RLIMIT_CPU, _CPU_SECONDS),
+                      (resource.RLIMIT_AS, _MEM_BYTES),
+                      (resource.RLIMIT_FSIZE, _FSIZE_BYTES),
+                      (getattr(resource, "RLIMIT_NPROC", None), _NPROC)):
+        if res is None:
+            continue
+        try:
+            resource.setrlimit(res, (soft, soft))
+        except (ValueError, OSError):
+            pass
+
 # Read-only tools a local, non-container sandbox may run. Anything that mutates the
 # host, escalates, or reaches the network is intentionally absent.
 SAFE_BINS = frozenset(
@@ -36,6 +64,7 @@ class LocalSandbox(Sandbox):
             proc = await asyncio.create_subprocess_exec(
                 *argv, cwd=self.workdir,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                preexec_fn=_limit_child if resource is not None else None,
             )
             try:
                 out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)

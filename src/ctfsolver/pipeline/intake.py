@@ -9,7 +9,26 @@ import os
 import re
 from typing import Any, Optional
 
-from ..models import Artifact, Category, Challenge, Submission, Target
+from ..models import DEFAULT_FLAG_FORMAT, Artifact, Category, Challenge, Submission, Target
+
+# A spec-supplied flag_format is matched against large tool output, so a pathological pattern
+# is a ReDoS (catastrophic backtracking). Reject over-long patterns, ones that don't compile,
+# and the common nested-quantifier shapes ((a+)+, (.*)* ...), falling back to the safe default.
+_SAFE_FMT_MAXLEN = 200
+_NESTED_QUANT = re.compile(r"\([^)]*[*+][^)]*\)[*+]")
+
+
+def safe_flag_format(pattern: Optional[str]) -> str:
+    if not pattern:
+        return DEFAULT_FLAG_FORMAT
+    if len(pattern) > _SAFE_FMT_MAXLEN or _NESTED_QUANT.search(pattern):
+        return DEFAULT_FLAG_FORMAT
+    try:
+        re.compile(pattern)
+    except re.error:
+        return DEFAULT_FLAG_FORMAT
+    return pattern
+
 
 _NC = re.compile(r"^\s*nc\s+(\S+)\s+(\d+)\s*$", re.IGNORECASE)
 _HOSTPORT = re.compile(r"^\s*([A-Za-z0-9._-]+):(\d+)\s*$")
@@ -143,7 +162,7 @@ def intake(
         local_instance=local_instance,
     )
     if flag_format:
-        chal.flag_format = flag_format
+        chal.flag_format = safe_flag_format(flag_format)
     if submission:
         chal.submission = Submission(**submission)
     chal.category_hint = _infer_category(tgts, arts)

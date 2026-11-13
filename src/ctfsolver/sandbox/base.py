@@ -62,11 +62,26 @@ class Sandbox(ABC):
             raise ScopeError(f"path escapes sandbox: {rel}")
         return p
 
+    # A staged handout is bounded so a special/endless source (e.g. a fifo or /dev/zero) can't
+    # stream forever and fill the host disk. Raises if the source exceeds the cap.
+    MAX_STAGE_BYTES = 512 * 1024 * 1024  # 512 MiB
+
     def stage_file(self, src: str, name: Optional[str] = None) -> str:
         name = name or os.path.basename(src)
         dst = self.path(name)
-        shutil.copyfile(src, dst)
-        self.audit.record("sandbox", "stage", name, bytes=os.path.getsize(dst))
+        written = 0
+        with open(src, "rb") as fsrc, open(dst, "wb") as fdst:
+            while True:
+                chunk = fsrc.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > self.MAX_STAGE_BYTES:
+                    fdst.close()
+                    os.unlink(dst)
+                    raise ScopeError(f"handout {name} exceeds {self.MAX_STAGE_BYTES} bytes")
+                fdst.write(chunk)
+        self.audit.record("sandbox", "stage", name, bytes=written)
         return name
 
     def read_bytes(self, rel: str) -> bytes:

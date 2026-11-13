@@ -30,12 +30,23 @@ def test_scope_http_origin():
 
 
 def test_scope_local_instance_handle():
+    # a bare handle authorizes the handle itself but NOT all of loopback (SSRF defence)
     chal = Challenge(name="c", local_instance="ctr://abc123")
     p = ScopePolicy.for_challenge(chal)
     p.check(handle="ctr://abc123")
-    p.check(host="127.0.0.1", port=5000)  # localhost allowed for local instance
+    with pytest.raises(ScopeError):
+        p.check(host="127.0.0.1", port=5000)  # loopback is NOT wide open
     with pytest.raises(ScopeError):
         p.check(handle="ctr://someone-else")
+
+
+def test_scope_local_instance_pins_to_port():
+    # when the instance names a loopback port, only that port is authorized
+    chal = Challenge(name="c", local_instance="127.0.0.1:5000")
+    p = ScopePolicy.for_challenge(chal)
+    p.check(host="127.0.0.1", port=5000)
+    with pytest.raises(ScopeError):
+        p.check(host="127.0.0.1", port=6000)  # a different local service stays off-limits
 
 
 def test_budget_ledger_charges_and_stops():

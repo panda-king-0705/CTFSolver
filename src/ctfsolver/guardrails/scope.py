@@ -8,6 +8,7 @@ into leaving scope.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import urlsplit
@@ -72,7 +73,14 @@ class ScopePolicy:
                     p.allowed_hostports.add(f"{h}:{port}")
         if challenge.local_instance:
             p.allowed_handles.add(challenge.local_instance)
-            p.allowed_hosts.update({"127.0.0.1", "localhost"})
+            # Scope loopback to the specific port the instance exposes, if we can read it --
+            # NOT all of loopback (which would authorize SSRF to every local service). A bare
+            # handle (a container id/name) opens no ports; list a 127.0.0.1:<port> target for that.
+            m = re.search(r"(?:^|\s|/)(?:127\.0\.0\.1|localhost)[:\s]+(\d{1,5})\b",
+                          challenge.local_instance)
+            if m:
+                for h in ("127.0.0.1", "localhost"):
+                    p.allowed_hostports.add(f"{h}:{m.group(1)}")
         return p
 
     # ------------------------------------------------------------------ #
