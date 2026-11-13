@@ -67,6 +67,15 @@ class Settings:
     rework_rounds: int = int(os.getenv("CTFSOLVER_REWORK_ROUNDS", "1"))
     max_escalations: int = int(os.getenv("CTFSOLVER_MAX_ESCALATIONS", "3"))
 
+    # Multi-model racing (the ctf-agent swarm): when the specialists come up empty, race
+    # these models on the WHOLE challenge in parallel -- first flag wins. Empty = no swarm
+    # (use single-model metacognition). e.g. CTFSOLVER_SWARM="claude-cli:opus,claude-cli:sonnet"
+    swarm_models: list[str] = field(default_factory=lambda: [
+        m.strip() for m in os.getenv("CTFSOLVER_SWARM", "").split(",") if m.strip()
+    ])
+    # >1 runs waves: between waves a coordinator reads the transcripts and guides the next.
+    swarm_waves: int = int(os.getenv("CTFSOLVER_SWARM_WAVES", "1"))
+
     # Guardrails
     allow_human_gate: bool = True
     db_path: str = os.getenv("CTFSOLVER_DB", ":memory:")

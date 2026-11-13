@@ -28,8 +28,10 @@ from .pipeline.verify import verify
 from .pipeline.writeup import generate_writeup
 from .sandbox.base import Sandbox
 from .sandbox.local import LocalSandbox
+from .specialists.agent_loop import is_stub
 from .specialists.base import SolveContext, Specialist
 from .specialists.metacognition import metacognitive_solve
+from .specialists.swarm import make_coordinator, swarm_solve
 from .specialists.registry import get as get_specialist
 from .specialists.registry import load_defaults
 from .trace import Trace
@@ -197,16 +199,22 @@ class Orchestrator:
                 with trace.span(f"solve:{current.name}", f"escalation={step}"):
                     outcome = await current.solve(ctx)
                     # Don't give up when the specialist has no canned path: reason through it.
-                    # Metacognition tries candidate approaches cheap-first (standard tier, few
-                    # steps), reflects, and escalates to the frontier model only when it's worth
-                    # it — early-stopping on a real external blocker. No-ops on the offline stub.
+                    # With a swarm configured, race several models on the whole challenge (first
+                    # flag wins). Otherwise single-model metacognition: candidate approaches
+                    # cheap-first, reflect, escalate only when worth it. No-ops on the stub.
                     if not outcome.solved:
-                        flag, asteps = await metacognitive_solve(ctx, points=challenge.points)
+                        if self.settings.swarm_models and not is_stub(ctx, "solve_strategy"):
+                            flag, asteps = await self._swarm_fallback(
+                                challenge, understanding, scope, ledger, audit, trace)
+                            source = "model swarm"
+                        else:
+                            flag, asteps = await metacognitive_solve(ctx, points=challenge.points)
+                            source = "agentic reasoning loop"
                         outcome.steps = list(outcome.steps) + asteps
                         if flag:
                             outcome = Outcome(
                                 status=OutcomeStatus.SOLVED,
-                                flag=Flag(value=flag, source="agentic reasoning loop"),
+                                flag=Flag(value=flag, source=source),
                                 steps=outcome.steps, specialist=f"{current.name}+agent",
                             )
             except BudgetExceeded as exc:
@@ -250,6 +258,35 @@ class Orchestrator:
             break
 
         return last or Outcome(OutcomeStatus.FAILED, notes="no attempt made")
+
+    # ------------------------------------------------------------------ #
+    async def _swarm_fallback(self, challenge, understanding, scope, ledger, audit, trace):
+        """Race the configured models on the whole challenge, each in its own fresh sandbox,
+        first flag wins; a coordinator guides later waves. Returns (flag | None, steps)."""
+        techniques = self.memory.recall_techniques(
+            " ".join([understanding.category.value, understanding.subtype]
+                     + understanding.recon[:3]),
+            category=understanding.category, limit=5,
+        )
+
+        def spawn(model: str) -> SolveContext:
+            sandbox = self.sandbox_factory(scope, ledger, audit, self.gate)
+            self._stage(challenge, sandbox, trace)
+            pinned = lambda stage: _BudgetedClient(self._client(model), ledger, trace, stage)
+            return SolveContext(
+                challenge=challenge, understanding=understanding, sandbox=sandbox,
+                memory=self.memory, trace=trace, settings=self.settings, ledger=ledger,
+                techniques=techniques, _llm_factory=pinned,
+            )
+
+        coordinator = None
+        if self.settings.swarm_waves > 1:
+            coordinator = make_coordinator(
+                self._client(self.settings.model_for("solve_strategy")), trace)
+        with trace.span("swarm"):
+            return await swarm_solve(spawn, self.settings.swarm_models, trace=trace,
+                                     coordinator=coordinator, waves=self.settings.swarm_waves,
+                                     max_iters=6)
 
     # ------------------------------------------------------------------ #
     def _stage(self, challenge: Challenge, sandbox: Sandbox, trace: Trace) -> None:

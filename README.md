@@ -214,6 +214,20 @@ This is the brain's Cognitive-Control → Candidate-Solutions and Confidence →
 Reflection arc, flag-as-oracle. Everything runs in the sandbox (scope/egress/budget/audited);
 it needs a real model (`--subscription` or an API key) and no-ops cleanly on the offline stub.
 
+**Multi-model racing (the swarm).** For a harder challenge, race several models on the *whole*
+challenge in parallel — first flag wins (still whole-challenge, no fragmentation; each racer
+owns the entire challenge in its own disposable sandbox):
+
+```sh
+PYTHONPATH=src python -m ctfsolver.cli solve --spec chall.json --subscription \
+  --swarm claude-cli:opus,claude-cli:sonnet --swarm-waves 2 --container
+```
+
+With `--swarm-waves > 1`, a **coordinator** reads every racer's transcript after a losing wave
+and writes one paragraph of tactical guidance, fed to all racers as a shared hint for the next
+wave (ctf-agent's coordinator + cross-solver insight sharing). Configure it instead with
+`CTFSOLVER_SWARM="m1,m2"` / `CTFSOLVER_SWARM_WAVES=2`. Empty = single-model metacognition.
+
 **Live instances** (`nc host port`, no handout): the pwn/misc paths talk to the socket
 directly — read the banner, probe, and, when the model is wired, write and run an interactive
 solver. A silent service is probed for **SMB** (`specialists/smb.py`, the `smb` extra): an

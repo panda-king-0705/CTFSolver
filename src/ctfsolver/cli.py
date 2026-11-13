@@ -98,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="run in the container sandbox (Docker) when a daemon is available")
     s.add_argument("--subscription", action="store_true",
                    help="route model calls through the local `claude` CLI (your Claude subscription)")
+    s.add_argument("--swarm", default=None, metavar="M1,M2,...",
+                   help="race these models on the whole challenge, first flag wins "
+                        "(e.g. claude-cli:opus,claude-cli:sonnet)")
+    s.add_argument("--swarm-waves", type=int, default=None,
+                   help="run N waves; a coordinator guides each wave after the first (default 1)")
     s.add_argument("--writeup", metavar="PATH", default=None,
                    help="path to save the writeup (default: writeups/<name>.md)")
     s.add_argument("--no-writeup", action="store_true", help="don't save a writeup file")
@@ -204,6 +209,12 @@ def main(argv: list[str] | None = None) -> int:
 
         settings.tier_models = subscription_tier_models()
         print("[llm] routing tiers through the claude CLI (subscription)", file=sys.stderr)
+    if args.swarm:
+        settings.swarm_models = [m.strip() for m in args.swarm.split(",") if m.strip()]
+        print(f"[swarm] racing {len(settings.swarm_models)} models: "
+              f"{', '.join(settings.swarm_models)}", file=sys.stderr)
+    if args.swarm_waves:
+        settings.swarm_waves = args.swarm_waves
     factory = None
     if args.container:
         from .sandbox.factory import auto_sandbox_factory
