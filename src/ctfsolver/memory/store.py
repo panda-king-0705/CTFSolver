@@ -91,39 +91,53 @@ class MemoryStore:
     def recall_techniques(
         self, query: str, category: Optional[Category] = None, limit: int = 5
     ) -> list[Technique]:
-        """Procedural recall used by triage: pull solve skeletons that match."""
-        ids: list[str] = []
+        """Procedural recall used by triage: pull the solve skeletons that best match.
+
+        Ranking is relevance-first. With FTS5 we order by ``bm25()`` so a technique
+        matching more (and rarer) query terms wins -- this matters now that one
+        category holds dozens of entries and a bare category token like "web"
+        matches them all; bm25's IDF naturally discounts that common token. The
+        requested category is then promoted as a *stable* reorder, preserving the
+        bm25 order within each group, with win-rate/usage as the final tiebreak.
+        """
         q = (query or "").strip()
+        # (technique, relevance_rank) pairs; lower rank == better match.
+        ranked: list[tuple[Technique, float]] = []
+
         if self.fts and q:
             fts_q = " OR ".join(_tokens(q))
             if fts_q:
                 try:
                     rows = self.conn.execute(
-                        "SELECT id FROM techniques_fts WHERE techniques_fts MATCH ? LIMIT ?",
+                        "SELECT t.*, bm25(techniques_fts) AS _rank "
+                        "FROM techniques_fts JOIN techniques t ON t.id = techniques_fts.id "
+                        "WHERE techniques_fts MATCH ? ORDER BY _rank LIMIT ?",
                         (fts_q, limit * 4),
                     ).fetchall()
-                    ids = [r["id"] for r in rows]
+                    ranked = [(self._row_to_technique(r), r["_rank"]) for r in rows]
                 except sqlite3.OperationalError:
-                    ids = []
-        results: list[Technique] = []
-        if ids:
-            placeholders = ",".join("?" * len(ids))
-            rows = self.conn.execute(
-                f"SELECT * FROM techniques WHERE id IN ({placeholders})", ids
-            ).fetchall()
-            results = [self._row_to_technique(r) for r in rows]
-        else:
-            # LIKE fallback (or empty query): rank by category match + usage
+                    ranked = []
+
+        if not ranked:
+            # LIKE fallback (or empty query): no relevance signal, so rank flat.
             like = f"%{q}%"
             rows = self.conn.execute(
                 "SELECT * FROM techniques WHERE (title LIKE ? OR pattern LIKE ? OR recipe LIKE ? OR tags LIKE ?)",
                 (like, like, like, like),
             ).fetchall() if q else self.conn.execute("SELECT * FROM techniques").fetchall()
-            results = [self._row_to_technique(r) for r in rows]
-        if category is not None:
-            results = [t for t in results if t.category == category] or results
-        results.sort(key=lambda t: (t.category == category, t.win_rate, t.uses), reverse=True)
-        return results[:limit]
+            ranked = [(self._row_to_technique(r), 0.0) for r in rows]
+
+        if category is not None and any(t.category == category for t, _ in ranked):
+            ranked = [(t, r) for t, r in ranked if t.category == category] or ranked
+
+        # stable sort: category match first, then bm25 relevance, then proven win-rate/use.
+        ranked.sort(key=lambda tr: (
+            category is not None and tr[0].category != category,  # False(0) sorts first
+            tr[1],                                                 # lower bm25 == better
+            -tr[0].win_rate,
+            -tr[0].uses,
+        ))
+        return [t for t, _ in ranked[:limit]]
 
     def bump_technique(self, technique_id: str, win: bool) -> None:
         self.conn.execute(

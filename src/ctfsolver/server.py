@@ -90,6 +90,28 @@ def _event_dict(ev: TraceEvent) -> dict:
             "data": ev.data, "ts": round(ev.ts, 3)}
 
 
+def knowledge_summary() -> dict:
+    """Report the procedural technique library that backs every solve: total count and
+    a per-category breakdown. The glass box surfaces this so a viewer can see the agent
+    reasons from a real, inspectable playbook (distilled from docs/WEB_AND_CTF_CONCEPTS.md),
+    not a hardcoded script. Best-effort: never raises."""
+    try:
+        mem = MemoryStore(":memory:")
+        try:
+            from .memory.seed import seed_techniques
+            total = seed_techniques(mem)
+            rows = mem.conn.execute(
+                "SELECT category, COUNT(*) c FROM techniques GROUP BY category ORDER BY category"
+            ).fetchall()
+            by_category = {r["category"]: r["c"] for r in rows}
+        finally:
+            mem.close()
+        return {"techniques": total, "by_category": by_category,
+                "source": "docs/WEB_AND_CTF_CONCEPTS.md + data/techniques*.json"}
+    except Exception:
+        return {"techniques": 0, "by_category": {}}
+
+
 def _build_challenge(payload: dict):
     """Turn a request body into a Challenge. Accepts a whitelisted example name, a
     full inline spec, or ad-hoc name/targets/files."""
@@ -274,7 +296,7 @@ def make_handler(cfg: ServerConfig, token: str = "", require_auth: bool = False)
                 self.wfile.write(body)
                 return
             if path == "/api/health":
-                self._send_json({"status": "ok"})
+                self._send_json({"status": "ok", "knowledge": knowledge_summary()})
                 return
             if path == "/api/examples":
                 self._send_json({"examples": list_examples()})
@@ -545,6 +567,7 @@ pre.writeup{white-space:pre-wrap;font-family:var(--mono);font-size:11.5px;backgr
   </span>
   <span class="spacer"></span>
   <span class="badge" id="backend"><span class="dot"></span><span id="backend-t">model: —</span></span>
+  <span class="badge" id="kb" title="Procedural technique library the agent recalls from, distilled from docs/WEB_AND_CTF_CONCEPTS.md">📚 <span id="kb-t">knowledge: —</span></span>
   <button class="iconbtn" id="theme" title="Toggle theme">◐ theme</button>
 </header>
 <div class="wrap">
@@ -824,6 +847,16 @@ $("#send").addEventListener("click",send);
 $("#msg").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}});
 
 renderFilters();renderKPIs();
+// knowledge base: show the recall library size so the glass box proves the agent
+// reasons from an inspectable playbook (from docs/WEB_AND_CTF_CONCEPTS.md), not a script.
+(async()=>{try{const r=await fetch("/api/health");const j=await r.json();const k=j&&j.knowledge;
+  if(k&&k.techniques){const bc=k.by_category||{};
+    const top=Object.entries(bc).sort((a,b)=>b[1]-a[1]).slice(0,3).map(e=>e[0]+" "+e[1]).join(" · ");
+    $("#kb-t").textContent="knowledge: "+k.techniques+" techniques"+(top?" ("+top+")":"");
+    $("#kb").title="Procedural technique library the agent recalls from — "+
+      Object.entries(bc).map(e=>e[0]+": "+e[1]).join(", ")+". Source: "+(k.source||"data/techniques*.json");}
+  else{$("#kb").style.display="none";}
+}catch(e){$("#kb").style.display="none";}})();
 // deep link: /?target=nc+host+port auto-starts a solve from chat
 const q=new URLSearchParams(location.search);
 if(q.get("target")){$("#msg").value="solve "+q.get("target");send();}
