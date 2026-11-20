@@ -153,6 +153,7 @@ def intake(
     description: str = "",
     submission: Optional[dict] = None,
     local_instance: Optional[str] = None,
+    category: Optional[Any] = None,
 ) -> Challenge:
     tgts = [t for t in (parse_target(s) for s in (targets or [])) if t]
     arts = [classify_artifact(p) for p in (files or [])]
@@ -165,7 +166,12 @@ def intake(
         chal.flag_format = safe_flag_format(flag_format)
     if submission:
         chal.submission = Submission(**submission)
-    chal.category_hint = _infer_category(tgts, arts)
+    # An explicit category (the player almost always knows it) wins over inference;
+    # inference only fills in when it is absent or UNKNOWN. This is what lets a
+    # raw-binary crypto/pwn/rev challenge reach the right specialist instead of
+    # misrouting to misc just because the bytes carry no textual hint.
+    declared = Category.coerce(category) if category is not None else Category.UNKNOWN
+    chal.category_hint = declared if declared != Category.UNKNOWN else _infer_category(tgts, arts)
     return chal
 
 
@@ -185,4 +191,5 @@ def intake_from_spec(spec: dict) -> Challenge:
         description=spec.get("description", ""),
         submission=spec.get("submission"),
         local_instance=spec.get("local_instance"),
+        category=spec.get("category", spec.get("category_hint")),
     )

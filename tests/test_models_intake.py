@@ -13,6 +13,34 @@ def test_category_coerce():
     assert Category.coerce("nonsense") is Category.UNKNOWN
 
 
+def test_declared_category_overrides_inference():
+    # A raw-binary challenge carries no textual hint, so inference lands on misc/unknown;
+    # a declared category must win so it reaches the right specialist (the routing gap
+    # that made novel single/repeating-XOR challenges miss their flag).
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        f.write(bytes(range(256)))  # opaque bytes, no base64/hex signal
+        path = f.name
+    try:
+        inferred = intake("c", files=[path])
+        assert inferred.category_hint in (Category.MISC, Category.UNKNOWN)
+        declared = intake("c", files=[path], category="crypto")
+        assert declared.category_hint is Category.CRYPTO
+        # a junk category must not override with UNKNOWN -- fall back to inference
+        fallback = intake("c", files=[path], category="not-a-category")
+        assert fallback.category_hint == inferred.category_hint
+    finally:
+        os.unlink(path)
+
+
+def test_intake_from_spec_reads_category():
+    from ctfsolver.pipeline.intake import intake_from_spec
+    chal = intake_from_spec({"name": "x", "category": "pwn", "points": 50})
+    assert chal.category_hint is Category.PWN
+    # the alias key is accepted too
+    chal2 = intake_from_spec({"name": "y", "category_hint": "rev"})
+    assert chal2.category_hint is Category.REV
+
+
 def test_target_scope_key_and_parse():
     assert parse_target("nc host.ctf 1337") == Target("tcp", "host.ctf", 1337, raw="nc host.ctf 1337")
     assert parse_target("host.ctf:9001").kind == "tcp"
